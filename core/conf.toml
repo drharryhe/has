@@ -1,0 +1,14 @@
+[ServerConf]
+LogOutputs = ["multifiles", "console"]
+
+[ApiGatewayConf]
+BreakerLimitApi = true
+BreakerLimitIP = true
+BreakerLimitUser = true
+BreakerRequestTimeout = 10
+BreakerDashboard = true
+BreakerEnabled = true
+BreakerMaxConcurrentRequest = 10
+BreakerRequestVolumeThreshold = 10
+BreakerSleepWindow = 10
+BreakerErrorPercentThreshold = 10

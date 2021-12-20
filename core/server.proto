@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package core;
+
+
+message PbServiceRequest {
+  string name = 1;
+  string slot = 2;
+  string encoding = 3;
+  bytes params = 4;
+}
+
+message PbServiceResponse {
+  bool  success = 1;
+  string message = 2;
+  bytes data = 3;
+}

@@ -1,0 +1,5 @@
+[SessionMiddleware]
+SessionService = "session"
+VerifySlot = "verifyToken"
+WhiteList = ["aa:login,checkLogin"]
+MagicToken = 123456789

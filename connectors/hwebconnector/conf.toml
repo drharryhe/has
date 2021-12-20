@@ -1,0 +1,12 @@
+[WebConnectorConf]
+Disabled = false
+AppKey = "1234"
+AppSecret = "1234"
+SignMethod = "sha256"
+Port = 1976
+Timeout = 5
+Packer = "JsonPacker"
+BodyLimit = 4 #Mbit
+Tls = true
+TlsCertPath = "./certs/bby.crt"
+TlsKeyPath = "./certs/bby.key"

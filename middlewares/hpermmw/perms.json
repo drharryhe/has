@@ -1,0 +1,10 @@
+[
+  {
+    "desc": "查看成绩权限",
+    "disabled": false,
+    "service": "rdq",
+    "api": "query",
+    "if": "@key==student",
+    "constrain": "getStudentID(@params.user) == @params.student_id || getUserRole(@params.user) == 教师"
+  }
+]
