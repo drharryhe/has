@@ -4,6 +4,7 @@ import (
 	"github.com/drharryhe/has/common/hconf"
 	"github.com/drharryhe/has/common/herrors"
 	"github.com/drharryhe/has/common/hlogger"
+	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/utils/hrandom"
 	"github.com/drharryhe/has/utils/hruntime"
 )
@@ -84,7 +85,7 @@ func (this *BaseConnector) EntityMeta() *EntityMeta {
 }
 
 // 要被具体的Connector 调用
-func (this *BaseConnector) GetConfigItem(ps Map) (Any, *herrors.Error) {
+func (this *BaseConnector) GetConfigItem(ps htypes.Map) (htypes.Any, *herrors.Error) {
 	name, val, err := this.instance.(IEntity).Config().(*EntityConfBase).GetItem(ps)
 	if err == nil {
 		return val, nil
@@ -103,7 +104,7 @@ func (this *BaseConnector) GetConfigItem(ps Map) (Any, *herrors.Error) {
 }
 
 // 需要被具体的Connector 调用
-func (this *BaseConnector) UpdateConfigItems(ps Map) *herrors.Error {
+func (this *BaseConnector) UpdateConfigItems(ps htypes.Map) *herrors.Error {
 	items, err := this.instance.(IEntity).Config().(*EntityConfBase).SetItems(ps)
 	if err == nil {
 		return nil

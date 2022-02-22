@@ -4,6 +4,7 @@ import (
 	"github.com/drharryhe/has/common/hconf"
 	"github.com/drharryhe/has/common/herrors"
 	"github.com/drharryhe/has/common/hlogger"
+	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/utils/hrandom"
 	"github.com/drharryhe/has/utils/hruntime"
 )
@@ -54,7 +55,7 @@ func (this *BasePlugin) EntityMeta() *EntityMeta {
 	}
 }
 
-func (this *BasePlugin) Capability() Any {
+func (this *BasePlugin) Capability() htypes.Any {
 	hlogger.Error(this.Class() + "Capability not implemented")
 
 	return nil

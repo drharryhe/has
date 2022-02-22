@@ -1,4 +1,4 @@
-package standalone
+package hlocalrouter
 
 import "github.com/drharryhe/has/core"
 

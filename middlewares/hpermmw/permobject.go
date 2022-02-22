@@ -1,6 +1,7 @@
 package hpermmw
 
 import (
+	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/core"
 )
 
@@ -15,5 +16,5 @@ type Perm struct {
 
 type IPermFuncWrapper interface {
 	SetServer(s core.IServer)
-	Functions() core.Map
+	Functions() htypes.Map
 }

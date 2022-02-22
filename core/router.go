@@ -4,6 +4,7 @@ import (
 	"github.com/drharryhe/has/common/hconf"
 	"github.com/drharryhe/has/common/herrors"
 	"github.com/drharryhe/has/common/hlogger"
+	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/utils/hrandom"
 	"github.com/drharryhe/has/utils/hruntime"
 	"strings"
@@ -101,7 +102,7 @@ func (this *BaseRouter) RegisterEntity(m IEntity) *herrors.Error {
 	return nil
 }
 
-func (this *BaseRouter) ManageEntity(mm *EntityMeta, slot string, params Map) (Any, *herrors.Error) {
+func (this *BaseRouter) ManageEntity(mm *EntityMeta, slot string, params htypes.Map) (htypes.Any, *herrors.Error) {
 	m := this.Entities[mm.EID]
 	if m == nil {
 		return nil, herrors.ErrSysInternal.C("Entity entity [" + mm.EID + "] not found").WithStack()

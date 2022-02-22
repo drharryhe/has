@@ -1,4 +1,4 @@
-[WebConnectorConf]
+[WebConnector]
 Disabled = false
 AppKey = "1234"
 AppSecret = "1234"
@@ -10,3 +10,4 @@ BodyLimit = 4 #Mbit
 Tls = true
 TlsCertPath = "./certs/bby.crt"
 TlsKeyPath = "./certs/bby.key"
+ErrorDebug = true

@@ -8,6 +8,7 @@ import (
 	"github.com/antonmedv/expr"
 	"github.com/drharryhe/has/common/herrors"
 	"github.com/drharryhe/has/common/hlogger"
+	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/core"
 	"github.com/drharryhe/has/utils/hio"
 	jsoniter "github.com/json-iterator/go"
@@ -29,7 +30,7 @@ type Middleware struct {
 
 	conf        PermMiddleware
 	perms       map[string]map[string]map[string]*Perm
-	functions   core.Map
+	functions   htypes.Map
 	funcWrapper IPermFuncWrapper
 }
 
@@ -40,8 +41,8 @@ func (this *Middleware) Open(gw core.IAPIGateway, ins core.IAPIMiddleware) *herr
 	return this.loadPerms()
 }
 
-func (this *Middleware) HandleIn(seq uint64, service string, api string, data core.Map) (bool, *herrors.Error) {
-	env := make(core.Map)
+func (this *Middleware) HandleIn(seq uint64, service string, api string, data htypes.Map) (bool, *herrors.Error) {
+	env := make(htypes.Map)
 	for k, v := range data {
 		env[k] = v
 	}
@@ -77,11 +78,11 @@ func (this *Middleware) EntityStub() *core.EntityStub {
 		})
 }
 
-func (this *Middleware) AddFunctions(funcs core.Map) {
+func (this *Middleware) AddFunctions(funcs htypes.Map) {
 	this.functions = funcs
 }
 
-func (this *Middleware) prepareEnv(data core.Map) core.Map {
+func (this *Middleware) prepareEnv(data htypes.Map) htypes.Map {
 	for k, v := range this.functions {
 		data[k] = v
 	}
@@ -118,7 +119,7 @@ func (this *Middleware) loadPerms() *herrors.Error {
 	return nil
 }
 
-func (this *Middleware) evaluateBool(exp string, env core.Any) (bool, *herrors.Error) {
+func (this *Middleware) evaluateBool(exp string, env htypes.Any) (bool, *herrors.Error) {
 	program, err := expr.Compile(exp)
 	if err != nil {
 		return false, nil

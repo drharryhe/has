@@ -1,7 +1,8 @@
-package standalone
+package hlocalrouter
 
 import (
 	"github.com/drharryhe/has/common/herrors"
+	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/core"
 )
 
@@ -20,7 +21,7 @@ func (this *Router) Open(s core.IServer, ins core.IRouter) *herrors.Error {
 	return nil
 }
 
-func (this *Router) RequestService(service string, slot string, params core.Map) (core.Any, *herrors.Error) {
+func (this *Router) RequestService(service string, slot string, params htypes.Map) (htypes.Any, *herrors.Error) {
 	s := this.Services[service]
 
 	if s == nil || s.(core.IEntity).Config().GetDisabled() {

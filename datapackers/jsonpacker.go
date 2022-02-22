@@ -2,6 +2,7 @@ package datapackers
 
 import (
 	"github.com/drharryhe/has/common/herrors"
+	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/core"
 	"github.com/drharryhe/has/utils/hruntime"
 	jsoniter "github.com/json-iterator/go"
@@ -15,7 +16,7 @@ func (this *JsonPacker) Class() string {
 	return hruntime.GetObjectName(this)
 }
 
-func (this *JsonPacker) Marshal(data core.Any) ([]byte, *herrors.Error) {
+func (this *JsonPacker) Marshal(data htypes.Any) ([]byte, *herrors.Error) {
 	if hruntime.IsNil(data) {
 		data = map[string]interface{}{}
 	}
@@ -26,7 +27,7 @@ func (this *JsonPacker) Marshal(data core.Any) ([]byte, *herrors.Error) {
 	}
 }
 
-func (this *JsonPacker) Unmarshal(data []byte) (core.Any, *herrors.Error) {
+func (this *JsonPacker) Unmarshal(data []byte) (htypes.Any, *herrors.Error) {
 	ret := make(map[string]interface{})
 	err := jsoniter.Unmarshal(data, &ret)
 	if err != nil {

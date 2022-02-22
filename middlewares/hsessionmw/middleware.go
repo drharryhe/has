@@ -2,6 +2,7 @@ package hsessionmw
 
 import (
 	"github.com/drharryhe/has/common/herrors"
+	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/core"
 	"strings"
 )
@@ -28,7 +29,7 @@ func (this *Middleware) Open(gw core.IAPIGateway, ins core.IAPIMiddleware) *herr
 	return nil
 }
 
-func (this *Middleware) HandleIn(seq uint64, version string, api string, data core.Map) (bool, *herrors.Error) {
+func (this *Middleware) HandleIn(seq uint64, version string, api string, data htypes.Map) (bool, *herrors.Error) {
 	//白名单slot，不需要session验证
 	if this.whiteList[version] != nil && (this.whiteList[version][api] || this.whiteList[version]["*"]) {
 		return false, nil

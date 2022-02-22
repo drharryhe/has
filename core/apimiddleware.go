@@ -4,6 +4,7 @@ import (
 	"github.com/drharryhe/has/common/hconf"
 	"github.com/drharryhe/has/common/herrors"
 	"github.com/drharryhe/has/common/hlogger"
+	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/utils/hrandom"
 	"github.com/drharryhe/has/utils/hruntime"
 )
@@ -53,11 +54,11 @@ func (this *BaseMiddleware) EntityMeta() *EntityMeta {
 	}
 }
 
-func (this *BaseMiddleware) HandleIn(seq uint64, service string, slot string, data Map) (stop bool, err *herrors.Error) {
+func (this *BaseMiddleware) HandleIn(seq uint64, service string, slot string, data htypes.Map) (stop bool, err *herrors.Error) {
 	return false, herrors.ErrSysInternal.C("middleware HandleIn not implemented")
 }
 
-func (this *BaseMiddleware) HandleOut(seq uint64, service string, slot string, result Any, e *herrors.Error) (stop bool, err *herrors.Error) {
+func (this *BaseMiddleware) HandleOut(seq uint64, service string, slot string, result htypes.Any, e *herrors.Error) (stop bool, err *herrors.Error) {
 	return false, herrors.ErrSysInternal.C("middleware HandleOut not implemented")
 }
 

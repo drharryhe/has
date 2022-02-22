@@ -3,6 +3,7 @@ package core
 import (
 	"github.com/drharryhe/has/common/hconf"
 	"github.com/drharryhe/has/common/herrors"
+	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/utils/hruntime"
 )
 
@@ -18,19 +19,19 @@ const (
 
 func NewEntityStub(opt *EntityStubOptions) *EntityStub {
 	if opt.Ping == nil {
-		opt.Ping = func(params Map) (Any, *herrors.Error) {
+		opt.Ping = func(params htypes.Map) (htypes.Any, *herrors.Error) {
 			return true, nil
 		}
 	}
 
 	if opt.GetLoad == nil {
-		opt.GetLoad = func(params Map) (Any, *herrors.Error) {
+		opt.GetLoad = func(params htypes.Map) (htypes.Any, *herrors.Error) {
 			return nil, herrors.ErrSysUnhandled
 		}
 	}
 
 	if opt.ResetConfig == nil {
-		opt.ResetConfig = func(params Map) *herrors.Error {
+		opt.ResetConfig = func(params htypes.Map) *herrors.Error {
 			return herrors.ErrSysInternal.C("ResetConfig not implemented")
 		}
 	}
@@ -41,8 +42,8 @@ func NewEntityStub(opt *EntityStubOptions) *EntityStub {
 	return m
 }
 
-type EntitySetter func(params Map) *herrors.Error
-type EntityGetter func(params Map) (Any, *herrors.Error)
+type EntitySetter func(params htypes.Map) *herrors.Error
+type EntityGetter func(params htypes.Map) (htypes.Any, *herrors.Error)
 
 type EntityMeta struct {
 	ServerEID string `json:"server_eid"`
@@ -67,7 +68,7 @@ type EntityConfBase struct {
 	EID      string
 }
 
-func (this *EntityConfBase) GetItem(params Map) (string, Any, *herrors.Error) {
+func (this *EntityConfBase) GetItem(params htypes.Map) (string, htypes.Any, *herrors.Error) {
 	name, ok := params["name"].(string)
 	if !ok {
 		return "", nil, herrors.ErrCallerInvalidRequest.C("string parameter [%s] not found or invalid type", name).WithStack()
@@ -83,8 +84,8 @@ func (this *EntityConfBase) GetItem(params Map) (string, Any, *herrors.Error) {
 	}
 }
 
-func (this *EntityConfBase) SetItems(params Map) ([]map[string]Any, *herrors.Error) {
-	items, ok := params["items"].([]map[string]Any)
+func (this *EntityConfBase) SetItems(params htypes.Map) ([]map[string]htypes.Any, *herrors.Error) {
+	items, ok := params["items"].([]map[string]htypes.Any)
 	if !ok {
 		return nil, herrors.ErrCallerInvalidRequest.C("Map parameter [items] not found or invalid type").WithStack()
 	}
@@ -132,7 +133,7 @@ func (this *EntityConfBase) SetDisabled(dis bool) {
 	this.Disabled = dis
 }
 
-func (this *EntityStub) Manage(slot string, params Map, res *SlotResponse) {
+func (this *EntityStub) Manage(slot string, params htypes.Map, res *SlotResponse) {
 	switch slot {
 	case "Ping":
 		res.Data, res.Error = this.options.Ping(params)
@@ -152,7 +153,7 @@ func (this *EntityStub) Manage(slot string, params Map, res *SlotResponse) {
 	}
 }
 
-func (this *EntityStub) GetConfigItem(name string) (Any, *herrors.Error) {
+func (this *EntityStub) GetConfigItem(name string) (htypes.Any, *herrors.Error) {
 	val := hruntime.GetObjectFieldValue(this.options.Owner, name)
 	if val == nil {
 		return nil, herrors.ErrCallerInvalidRequest.C("config item [%s] not found", name)
@@ -161,7 +162,7 @@ func (this *EntityStub) GetConfigItem(name string) (Any, *herrors.Error) {
 	}
 }
 
-func (this *EntityStub) UpdateConfigItems(params Map) *herrors.Error {
+func (this *EntityStub) UpdateConfigItems(params htypes.Map) *herrors.Error {
 	var v interface{}
 	v = params
 	if err := hruntime.SetObjectValues(this.options.Owner, v.(map[string]interface{})); err != nil {
@@ -170,11 +171,11 @@ func (this *EntityStub) UpdateConfigItems(params Map) *herrors.Error {
 	return nil
 }
 
-func (this *EntityStub) ResetConfig(params Map) *herrors.Error {
+func (this *EntityStub) ResetConfig(params htypes.Map) *herrors.Error {
 	return this.options.ResetConfig(params)
 }
 
-func CheckAndRegisterEntity(ins Any, router IRouter) *herrors.Error {
+func CheckAndRegisterEntity(ins htypes.Any, router IRouter) *herrors.Error {
 	entity, ok := ins.(IEntity)
 	if !ok {
 		return herrors.ErrSysInternal.C("%s not implement IEntity interface", hruntime.GetObjectName(ins))

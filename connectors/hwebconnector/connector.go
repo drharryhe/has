@@ -4,16 +4,19 @@ import (
 	"bytes"
 	"crypto/tls"
 	"fmt"
-	"github.com/drharryhe/has/common/hconf"
-	"github.com/drharryhe/has/common/herrors"
-	"github.com/drharryhe/has/common/hlogger"
-	"github.com/drharryhe/has/core"
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/cors"
-	jsoniter "github.com/json-iterator/go"
 	"io"
 	"net/url"
 	"strings"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
+	jsoniter "github.com/json-iterator/go"
+
+	"github.com/drharryhe/has/common/hconf"
+	"github.com/drharryhe/has/common/herrors"
+	"github.com/drharryhe/has/common/hlogger"
+	"github.com/drharryhe/has/common/htypes"
+	"github.com/drharryhe/has/core"
 )
 
 const (
@@ -52,6 +55,8 @@ func (this *Connector) Open(gw core.IAPIGateway, ins core.IAPIConnector) *herror
 	this.App.Use(cors.New())
 	this.App.Get("/:version/:api", this.handleServiceAPI)
 	this.App.Post("/:version/:api", this.handleServiceAPI)
+	this.App.Get("/error/query/:fingerprint", this.handleErrFingerprint)
+	this.App.Get("/error/statics", this.handleErrStatics)
 
 	go func() {
 		if this.conf.Tls {
@@ -85,6 +90,33 @@ func (this *Connector) Open(gw core.IAPIGateway, ins core.IAPIConnector) *herror
 		}
 	}()
 
+	return nil
+}
+
+func (this *Connector) handleErrFingerprint(c *fiber.Ctx) error {
+	if !this.conf.ErrorDebug {
+		_ = c.SendString("error fingerprint query not available")
+		return nil
+	}
+
+	fp := c.Params("fingerprint")
+	s := herrors.QueryFingerprint(fp)
+	if s == "" {
+		_ = c.SendString(fmt.Sprintf("error fingerprint %s not found", fp))
+	} else {
+		_ = c.SendString(s)
+	}
+
+	return nil
+}
+
+func (this *Connector) handleErrStatics(c *fiber.Ctx) error {
+	if !this.conf.ErrorDebug {
+		_ = c.SendString("error statics not available")
+		return nil
+	}
+
+	_ = c.SendString(herrors.StaticsFingerprint())
 	return nil
 }
 
@@ -129,10 +161,16 @@ func (this *Connector) handleServiceAPI(c *fiber.Ctx) error {
 	return nil
 }
 
-func (this *Connector) SendResponse(c *fiber.Ctx, data core.Any, err *herrors.Error) {
-	if err != nil && this.conf.Lang != "" {
-		if trans := this.Gateway.I18n(); trans != nil {
-			err = err.D(trans.Translate(this.conf.Lang, err.Desc))
+func (this *Connector) SendResponse(c *fiber.Ctx, data htypes.Any, err *herrors.Error) {
+	if err != nil && err.Code != herrors.ECodeOK {
+		if this.conf.Lang != "" {
+			if trans := this.Gateway.I18n(); trans != nil {
+				err = err.D(trans.Translate(this.conf.Lang, err.Desc))
+			}
+		}
+
+		if this.conf.ErrorDebug {
+			_ = err.WithFingerprint()
 		}
 	}
 
@@ -142,8 +180,8 @@ func (this *Connector) SendResponse(c *fiber.Ctx, data core.Any, err *herrors.Er
 	}
 }
 
-func (this *Connector) HandleFileRequest(c *fiber.Ctx, data core.Any) (bool, *herrors.Error) {
-	val, ok := data.(core.Map)
+func (this *Connector) HandleFileRequest(c *fiber.Ctx, data htypes.Any) (bool, *herrors.Error) {
+	val, ok := data.(htypes.Map)
 	if !ok {
 		return false, nil
 	}
@@ -176,7 +214,7 @@ func (this *Connector) HandleFileRequest(c *fiber.Ctx, data core.Any) (bool, *he
 	return true, nil
 }
 
-func (this *Connector) ParseFormParams(c *fiber.Ctx, ps core.Map) *herrors.Error {
+func (this *Connector) ParseFormParams(c *fiber.Ctx, ps htypes.Map) *herrors.Error {
 	if len(c.Request().Header.MultipartFormBoundary()) == 0 || len(c.Request().Body()) == 0 {
 		return nil
 	}
@@ -190,9 +228,9 @@ func (this *Connector) ParseFormParams(c *fiber.Ctx, ps core.Map) *herrors.Error
 	}
 	if f.File != nil {
 		for key, ms := range f.File {
-			var ff []core.Any
+			var ff []htypes.Any
 			for _, f := range ms {
-				v := make(core.Map)
+				v := make(htypes.Map)
 				file, err := f.Open()
 				if err != nil {
 					return herrors.ErrCallerInvalidRequest.C(err.Error()).D("failed to open file").WithStack()
@@ -212,13 +250,13 @@ func (this *Connector) ParseFormParams(c *fiber.Ctx, ps core.Map) *herrors.Error
 	return nil
 }
 
-func (this *Connector) ParseBodyParams(c *fiber.Ctx, ps core.Map) *herrors.Error {
+func (this *Connector) ParseBodyParams(c *fiber.Ctx, ps htypes.Map) *herrors.Error {
 	if c.Request().Header.ContentType() == nil || strings.Index(string(c.Request().Header.ContentType()), "application/json") < 0 {
 		return nil
 	}
 	bs := c.Request().Body()
 	if len(bs) > 0 {
-		res := make(core.Map)
+		res := make(htypes.Map)
 		err := jsoniter.Unmarshal(bs, &res)
 		if err != nil {
 			return herrors.ErrCallerInvalidRequest.D("failed to parse body").WithStack()
@@ -231,20 +269,20 @@ func (this *Connector) ParseBodyParams(c *fiber.Ctx, ps core.Map) *herrors.Error
 	return nil
 }
 
-func (this *Connector) ParseHeaderParams(c *fiber.Ctx, ps core.Map) *herrors.Error {
+func (this *Connector) ParseHeaderParams(c *fiber.Ctx, ps htypes.Map) *herrors.Error {
 	c.Request().Header.VisitAll(func(key []byte, val []byte) {
 		ps[string(key)] = string(val)
 	})
 	return nil
 }
 
-func (this *Connector) ParseQueryParams(c *fiber.Ctx) (core.Map, *herrors.Error) {
+func (this *Connector) ParseQueryParams(c *fiber.Ctx) (htypes.Map, *herrors.Error) {
 	u, err := url.Parse(c.Request().URI().String())
 	if err != nil {
 		return nil, herrors.ErrCallerInvalidRequest.C(err.Error()).D("failed to parse URL").WithStack()
 	}
 
-	ps := make(core.Map)
+	ps := make(htypes.Map)
 	m, err := url.ParseQuery(u.RawQuery)
 	for k, v := range m {
 		ps[k] = v[0]
@@ -266,7 +304,7 @@ func (this *Connector) Config() core.IEntityConf {
 	return &this.conf
 }
 
-func (this *Connector) getConfigItem(ps core.Map) (core.Any, *herrors.Error) {
+func (this *Connector) getConfigItem(ps htypes.Map) (htypes.Any, *herrors.Error) {
 	name, val, err := this.conf.GetItem(ps)
 	if err == nil {
 		return val, nil
@@ -277,7 +315,7 @@ func (this *Connector) getConfigItem(ps core.Map) (core.Any, *herrors.Error) {
 	}
 }
 
-func (this *Connector) updateConfigItems(ps core.Map) *herrors.Error {
+func (this *Connector) updateConfigItems(ps htypes.Map) *herrors.Error {
 	_, err := this.conf.SetItems(ps)
 	if err != nil && err.Code != herrors.ECodeSysUnhandled {
 		return err

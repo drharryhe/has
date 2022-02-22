@@ -7,7 +7,15 @@ import (
 	"strconv"
 )
 
+var (
+	f = func() string {
+		return "hello world!"
+	}
+)
+
 func main() {
+
+	f()
 
 	fmt.Printf("%016x\r\n\n", 15)
 

@@ -9,11 +9,11 @@ import (
 )
 
 type Error struct {
-	Code  int    `json:"code"`
-	Desc  string `json:"desc"`
-	ID    string `json:"id,omitempty"`
-	Cause string `json:"cause,omitempty"`
-	stack []string
+	Code        int    `json:"code"`
+	Desc        string `json:"desc,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
+	Cause       string `json:"cause,omitempty"`
+	stack       []string
 }
 
 func New(code int) *Error {
@@ -48,7 +48,7 @@ func (this *Error) String() string {
 	if len(this.stack) > 0 {
 		var tmp string
 		for _, s := range this.stack {
-			tmp = fmt.Sprintf("%s \t\t %s\r\n", tmp, s)
+			tmp = fmt.Sprintf("%s \t |\t > %s\r\n", tmp, s)
 		}
 		s = fmt.Sprintf("%s\r\n\t |\tSTACK: \r\n%s", s, tmp)
 	}
@@ -72,28 +72,20 @@ func (this *Error) WithStack() *Error {
 	return this
 }
 
-func (this *Error) WithIDs() *Error {
-	var ids []string
+func (this *Error) WithFingerprint() *Error {
+	var errsps []string
 	for _, s := range this.stack {
-		index := strings.LastIndex(s, "-->")
-		t := strings.TrimSpace(s[index+3:])
-		ss := strings.Split(t, ":")
-		f := hencoder.Md5ToString([]byte(ss[0]))
-		n, _ := htext.ParseDecimal(ss[1])
-		ids = append(ids, fmt.Sprintf("%s%04x", f, n))
+		file, fun, line := this.parseStackItem(s)
+		errsps = append(errsps, addErrorFingerprint(file, fun, line))
 	}
-	this.ID = strings.Join(ids, ",")
+	addStackFingerprint(hencoder.Md5ToString([]byte(strings.Join(errsps, ""))), errsps)
 	return this
 }
 
-func (this *Error) WithID() *Error {
-	if len(this.stack) > 0 {
-		index := strings.LastIndex(this.stack[0], "-->")
-		t := strings.TrimSpace(this.stack[0][index+3:])
-		ss := strings.Split(t, ":")
-		f := hencoder.Md5ToString([]byte(ss[0]))
-		n, _ := htext.ParseDecimal(ss[1])
-		this.ID = fmt.Sprintf("%s%04x", f, n)
-	}
-	return this
+func (this *Error) parseStackItem(caller string) (file string, fun string, line int) {
+	index := strings.LastIndex(caller, "-->")
+	t := strings.TrimSpace(caller[index+3:])
+	ss := strings.Split(t, ":")
+	n, _ := htext.ParseDecimal(ss[1])
+	return ss[0], t, int(n)
 }

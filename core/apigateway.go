@@ -5,6 +5,7 @@ import (
 	"github.com/drharryhe/has/common/hconf"
 	"github.com/drharryhe/has/common/herrors"
 	"github.com/drharryhe/has/common/hlogger"
+	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/utils/hrandom"
 	"github.com/drharryhe/has/utils/hruntime"
 	jsoniter "github.com/json-iterator/go"
@@ -15,7 +16,7 @@ const (
 	apiFileName = "./api.json"
 )
 
-func New(opt *APIGatewayOptions, args ...Any) *ApiGateway {
+func New(opt *APIGatewayOptions, args ...htypes.Any) *ApiGateway {
 	s := new(ApiGateway)
 	s.init(opt, args)
 	return s
@@ -52,7 +53,7 @@ type ApiGateway struct {
 	breakCmdConfig *hystrix.CommandConfig //熔断器设置
 }
 
-func (this *ApiGateway) init(opt *APIGatewayOptions, args ...Any) {
+func (this *ApiGateway) init(opt *APIGatewayOptions, args ...htypes.Any) {
 	if opt == nil {
 		hlogger.Error("APIGatewayOptions cannot be nil")
 		Panic("failed to init ApiGateway")
@@ -175,7 +176,7 @@ func (this *ApiGateway) I18n() IAPIi18n {
 	return this.i18n
 }
 
-func (this *ApiGateway) RequestAPI(version string, api string, params Map) (ret Any, err *herrors.Error) {
+func (this *ApiGateway) RequestAPI(version string, api string, params htypes.Map) (ret htypes.Any, err *herrors.Error) {
 	a := this.apiSet[version]
 	if a == nil {
 		return nil, herrors.ErrCallerInvalidRequest.C("api version %s not supported", version).WithStack()
@@ -332,7 +333,7 @@ func (this *ApiGateway) initBreaker() {
 	return
 }
 
-func (this *ApiGateway) cmdName(api string, data Map) string {
+func (this *ApiGateway) cmdName(api string, data htypes.Map) string {
 	var ps []string
 	if this.conf.BreakerLimitAPI {
 		ps = append(ps, api)

@@ -14,4 +14,5 @@ type WebConnector struct {
 	Tls         bool
 	TlsCertPath string
 	TlsKeyPath  string
+	ErrorDebug  bool //是否提供error code debug接口
 }

@@ -2,18 +2,21 @@ package core
 
 import (
 	"fmt"
-	"github.com/drharryhe/has/common/hconf"
-	"github.com/drharryhe/has/common/herrors"
-	"github.com/drharryhe/has/common/hlogger"
-	"github.com/drharryhe/has/utils/converter"
-	"github.com/drharryhe/has/utils/hrandom"
-	"github.com/drharryhe/has/utils/hruntime"
-	jsoniter "github.com/json-iterator/go"
-	"go.uber.org/ratelimit"
-	"gopkg.in/go-playground/validator.v9"
 	"os"
 	"reflect"
 	"strings"
+
+	jsoniter "github.com/json-iterator/go"
+	"go.uber.org/ratelimit"
+	"gopkg.in/go-playground/validator.v9"
+
+	"github.com/drharryhe/has/common/hconf"
+	"github.com/drharryhe/has/common/herrors"
+	"github.com/drharryhe/has/common/hlogger"
+	"github.com/drharryhe/has/common/htypes"
+	"github.com/drharryhe/has/utils/converter"
+	"github.com/drharryhe/has/utils/hrandom"
+	"github.com/drharryhe/has/utils/hruntime"
 )
 
 const (
@@ -38,7 +41,7 @@ type Service struct {
 	instance IService
 
 	conf             *IEntityConf
-	args             []Any
+	args             []htypes.Any
 	class            string
 	name             string
 	slots            map[string]*Slot
@@ -60,7 +63,7 @@ func (this *Service) Server() IServer {
 	return this.server
 }
 
-func (this *Service) Config() Any {
+func (this *Service) Config() htypes.Any {
 	return this.conf
 }
 
@@ -84,7 +87,7 @@ func (this *Service) DependOn() []string {
 	return nil
 }
 
-func (this *Service) Open(s IServer, instance IService, args ...Any) *herrors.Error {
+func (this *Service) Open(s IServer, instance IService, args ...htypes.Any) *herrors.Error {
 	this.class = hruntime.GetObjectName(instance)
 	this.instance = instance
 
@@ -127,7 +130,7 @@ func (this *Service) SlotNames() []string {
 	return names
 }
 
-func (this *Service) Request(slot string, params map[string]Any) (Any, *herrors.Error) {
+func (this *Service) Request(slot string, params htypes.Map) (htypes.Any, *herrors.Error) {
 	//如果配置了限流，则先进行限流处理
 	if this.requestLimiters[slot] != nil {
 		this.requestLimiters[slot].Take()
@@ -154,7 +157,7 @@ func (this *Service) Request(slot string, params map[string]Any) (Any, *herrors.
 	}
 }
 
-func (this *Service) SetResponse(res *SlotResponse, data Any, err *herrors.Error) {
+func (this *Service) SetResponse(res *SlotResponse, data htypes.Any, err *herrors.Error) {
 	if err == nil {
 		res.Error = herrors.ErrOK
 	}
@@ -232,7 +235,7 @@ func (this *Service) mountSlots(instance IService) *herrors.Error {
 	return nil
 }
 
-func (this *Service) callSlotHandler(slot string, data Any) (Any, *herrors.Error) {
+func (this *Service) callSlotHandler(slot string, data htypes.Any) (htypes.Any, *herrors.Error) {
 	handler := this.slotHandlers[slot]
 	if handler != nil {
 		var res SlotResponse
@@ -247,10 +250,10 @@ func (this *Service) callSlotHandler(slot string, data Any) (Any, *herrors.Error
 	}
 }
 
-func (this *Service) checkParams(ps map[string]Any, def []SlotParam) *herrors.Error {
-	var v Any
+func (this *Service) checkParams(ps htypes.Map, def []SlotParam) *herrors.Error {
+	var v htypes.Any
 	var toDelNames []string
-	replaceParams := make(map[string]Any)
+	replaceParams := make(map[string]htypes.Any)
 	for _, p := range def {
 		if !p.CaseInSensitive {
 			v = ps[p.Name]
@@ -274,13 +277,13 @@ func (this *Service) checkParams(ps map[string]Any, def []SlotParam) *herrors.Er
 					}
 				}
 			} else if p.Required == true {
-				return herrors.ErrCallerInvalidRequest.C("required parameter not found", p.Name).WithStack()
+				return herrors.ErrCallerInvalidRequest.C("required parameter %s not found", p.Name).WithStack()
 			} else {
 				continue
 			}
 		}
 
-		if err := Validate(v, p.Type); err != nil {
+		if err := htypes.Validate(v, p.Type); err != nil {
 			return herrors.ErrCallerInvalidRequest.C(err.Error()).WithStack()
 		}
 
@@ -334,14 +337,14 @@ func (this *Service) initLimiter() *herrors.Error {
 	return nil
 }
 
-func (this *Service) validateVar(v Any, tag string) *herrors.Error {
+func (this *Service) validateVar(v htypes.Any, tag string) *herrors.Error {
 	if validate == nil {
 		validate = validator.New()
 	}
 
 	k := reflect.TypeOf(v).Kind()
 	if k != reflect.String && k != reflect.Float64 && k != reflect.Float32 && k != reflect.Uint && k != reflect.Uint8 && k != reflect.Uint16 && k != reflect.Uint32 && k != reflect.Uint64 && k != reflect.Int && k != reflect.Int8 && k != reflect.Int16 && k != reflect.Int32 && k != reflect.Int64 {
-		return herrors.ErrCallerInvalidRequest.C("invalid var kind %s", hruntime.GetKindName(k)).WithStack()
+		return herrors.ErrCallerInvalidRequest.C("invalid var kind %s", htypes.GetKindName(k)).WithStack()
 	}
 
 	if err := validate.Var(v, tag); err != nil {
@@ -352,7 +355,7 @@ func (this *Service) validateVar(v Any, tag string) *herrors.Error {
 }
 
 // 需要被具体的Service 调用
-func (this *Service) GetConfigItem(ps Map) (Any, *herrors.Error) {
+func (this *Service) GetConfigItem(ps htypes.Map) (htypes.Any, *herrors.Error) {
 	name, val, err := this.instance.(IEntity).Config().(*EntityConfBase).GetItem(ps)
 	if err == nil {
 		return val, nil
@@ -371,7 +374,7 @@ func (this *Service) GetConfigItem(ps Map) (Any, *herrors.Error) {
 }
 
 // 需要被具体的Service 调用
-func (this *Service) UpdateConfigItems(ps Map) *herrors.Error {
+func (this *Service) UpdateConfigItems(ps htypes.Map) *herrors.Error {
 	items, err := this.instance.(IEntity).Config().(*EntityConfBase).SetItems(ps)
 	if err == nil {
 		return nil

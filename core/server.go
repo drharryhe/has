@@ -5,6 +5,7 @@ import (
 	"github.com/drharryhe/has/common/hconf"
 	"github.com/drharryhe/has/common/herrors"
 	hlogger "github.com/drharryhe/has/common/hlogger"
+	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/utils/hio"
 	"github.com/drharryhe/has/utils/hrandom"
 	"github.com/drharryhe/has/utils/hruntime"
@@ -33,7 +34,7 @@ type ServerConf struct {
 	MaxProcs   int
 }
 
-func NewServer(opt *ServerOptions, args ...Any) *Server {
+func NewServer(opt *ServerOptions, args ...htypes.Any) *Server {
 	s := new(Server)
 	s.init(opt, args)
 	return s
@@ -58,6 +59,10 @@ func (this *Server) Class() string {
 
 func (this *Server) Server() IServer {
 	return this
+}
+
+func (this *Server) IsProduction() bool {
+	return this.conf.Production
 }
 
 func (this *Server) Config() IEntityConf {
@@ -102,7 +107,7 @@ func (this *Server) Services() map[string]IService {
 	return this.services
 }
 
-func (this *Server) init(opt *ServerOptions, args ...Any) {
+func (this *Server) init(opt *ServerOptions, args ...htypes.Any) {
 	if opt == nil {
 		panic("ServerOptions cannot be nil")
 	} else {
@@ -182,7 +187,7 @@ func (this *Server) Shutdown() {
 	this.quitSignal <- syscall.SIGQUIT
 }
 
-func (this *Server) RegisterService(service IService, args ...Any) {
+func (this *Server) RegisterService(service IService, args ...htypes.Any) {
 	deps := service.DependOn()
 	for _, d := range deps {
 		if this.plugins[d] == nil {
@@ -231,7 +236,7 @@ func (this *Server) Slot(service string, slot string) *Slot {
 	return s.Slot(slot)
 }
 
-func (this *Server) RequestService(service string, slot string, params Map) (ret Any, err *herrors.Error) {
+func (this *Server) RequestService(service string, slot string, params htypes.Map) (ret htypes.Any, err *herrors.Error) {
 	if this.conf.Production {
 		defer func() {
 			e := recover()
@@ -272,7 +277,7 @@ func (this *Server) newRequestNo() uint64 {
 	return this.requestNo.Add(1)
 }
 
-func (this *Server) getConfigItem(ps Map) (Any, *herrors.Error) {
+func (this *Server) getConfigItem(ps htypes.Map) (htypes.Any, *herrors.Error) {
 	name, val, err := this.conf.EntityConfBase.GetItem(ps)
 	if err == nil {
 		return val, nil
@@ -290,7 +295,7 @@ func (this *Server) getConfigItem(ps Map) (Any, *herrors.Error) {
 	return nil, herrors.ErrCallerInvalidRequest.C("config item %s not supported", name).WithStack()
 }
 
-func (this *Server) updateConfigItems(ps Map) *herrors.Error {
+func (this *Server) updateConfigItems(ps htypes.Map) *herrors.Error {
 	items, err := this.conf.EntityConfBase.SetItems(ps)
 	if err != nil && err.Code != herrors.ECodeSysUnhandled {
 		return err
@@ -308,7 +313,7 @@ func (this *Server) updateConfigItems(ps Map) *herrors.Error {
 			}
 			this.conf.Production = v
 		case "MaxProcs":
-			if v, ok := hruntime.ToNumber(val); !ok {
+			if v, ok := htypes.ToNumber(val); !ok {
 				return herrors.ErrCallerInvalidRequest.C("int config item %s value invalid type", name).WithStack()
 			} else {
 				this.conf.MaxProcs = int(v)
@@ -324,7 +329,7 @@ func (this *Server) updateConfigItems(ps Map) *herrors.Error {
 	return nil
 }
 
-func (this *Server) resetConfig(ps Map) *herrors.Error {
+func (this *Server) resetConfig(ps htypes.Map) *herrors.Error {
 	this.conf.Production = false
 	this.conf.MaxProcs = 1
 
