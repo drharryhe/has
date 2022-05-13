@@ -3,7 +3,6 @@ package core
 import (
 	"github.com/drharryhe/has/common/hconf"
 	"github.com/drharryhe/has/common/herrors"
-	"github.com/drharryhe/has/common/hlogger"
 	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/utils/hrandom"
 	"github.com/drharryhe/has/utils/hruntime"
@@ -27,6 +26,8 @@ func (this *BaseMiddleware) Open(gw IAPIGateway, ins IAPIMiddleware) *herrors.Er
 	this.server = gw.Server()
 	this.instance = ins
 	this.class = hruntime.GetObjectName(this.instance.(IEntity).Config())
+	hconf.Load(ins.(IEntity).Config())
+
 	return nil
 }
 
@@ -41,9 +42,7 @@ func (this *BaseMiddleware) Class() string {
 func (this *BaseMiddleware) EntityMeta() *EntityMeta {
 	if this.instance.(IEntity).Config().GetEID() == "" {
 		this.instance.(IEntity).Config().SetEID(hrandom.UuidWithoutDash())
-		if err := hconf.Save(); err != nil {
-			hlogger.Error(err)
-		}
+		hconf.Save()
 	}
 
 	return &EntityMeta{
@@ -55,11 +54,11 @@ func (this *BaseMiddleware) EntityMeta() *EntityMeta {
 }
 
 func (this *BaseMiddleware) HandleIn(seq uint64, service string, slot string, data htypes.Map) (stop bool, err *herrors.Error) {
-	return false, herrors.ErrSysInternal.C("middleware HandleIn not implemented")
+	return false, herrors.ErrSysInternal.New("middleware HandleIn not implemented")
 }
 
 func (this *BaseMiddleware) HandleOut(seq uint64, service string, slot string, result htypes.Any, e *herrors.Error) (stop bool, err *herrors.Error) {
-	return false, herrors.ErrSysInternal.C("middleware HandleOut not implemented")
+	return false, herrors.ErrSysInternal.New("middleware HandleOut not implemented")
 }
 
 func (this *BaseMiddleware) Close() {

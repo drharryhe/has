@@ -1,12 +1,14 @@
 package hconf
 
 import (
-	"github.com/drharryhe/has/common/herrors"
-	"github.com/drharryhe/has/utils/hio"
-	"github.com/drharryhe/has/utils/hruntime"
+	"fmt"
+	"io/ioutil"
+
 	jsoniter "github.com/json-iterator/go"
 	"github.com/pelletier/go-toml/v2"
-	"io/ioutil"
+
+	"github.com/drharryhe/has/utils/hio"
+	"github.com/drharryhe/has/utils/hruntime"
 )
 
 const (
@@ -16,8 +18,10 @@ const (
 var config Config
 
 type Config struct {
-	Version    string
-	LogOutputs []string
+	Version     string
+	LogOutputs  []string
+	LogFileName string
+	Debug       bool
 
 	configures map[string]interface{}
 }
@@ -30,53 +34,67 @@ func LogOutputs() []string {
 	return config.LogOutputs
 }
 
+func LogFileName() string {
+	return config.LogFileName
+}
+
+func IsDebug() bool {
+	return config.Debug
+}
+
 func Init() {
 	bytes, err := hio.ReadFile(confFile)
 	if err != nil {
-		panic(herrors.ErrSysInternal.C(err.Error()).D("failed to init hconf").WithStack().String())
+		panic("failed to read config file \r\n" + err.Error())
 	}
 
 	config.configures = make(map[string]interface{})
 	err = toml.Unmarshal(bytes, &config.configures)
 	if err != nil {
-		panic(herrors.ErrSysInternal.C(err.Error()).D("failed to init hconf").WithStack().String())
+		panic("failed to parse config file. \r\n" + err.Error())
 	}
 
 	config.Version, _ = config.configures["Version"].(string)
-	config.LogOutputs, _ = config.configures["LogOutputs"].([]string)
+	config.LogFileName, _ = config.configures["LogFileName"].(string)
+	config.Debug, _ = config.configures["Debug"].(bool)
+	if config.configures["LogOutputs"] != nil {
+		outputs := config.configures["LogOutputs"].([]interface{})
+		for _, out := range outputs {
+			config.LogOutputs = append(config.LogOutputs, out.(string))
+		}
+	}
+
 }
 
-func Load(conf interface{}) *herrors.Error {
+func Load(conf interface{}) {
 	name := hruntime.GetObjectName(conf)
 	c, ok := config.configures[name]
 	if !ok {
-		return herrors.ErrSysInternal.C("config section [%s] not found", name).D("failed to load conf")
+		panic(fmt.Sprintf("failed to load conf, config section [%s] not found", name))
 	}
 
-	bs, err := jsoniter.Marshal(c)
-	if err != nil {
-		return herrors.ErrSysInternal.C("failed to marshal conf").D("failed to load conf")
-	}
+	bs, _ := jsoniter.Marshal(c)
 
-	err = jsoniter.Unmarshal(bs, conf)
+	err := jsoniter.Unmarshal(bs, conf)
 	if err != nil {
-		return herrors.ErrSysInternal.C("failed to unmarshal conf, please make sure conf.toml items' data type consistent with conf struct's fields data type").D("failed to load conf")
+		panic(fmt.Sprintf("failed to parse config section [%s]", name))
 	}
 
 	config.configures[name] = conf
-	return nil
 }
 
-func Save() *herrors.Error {
-	bs, err := toml.Marshal(config.configures)
+func Save() {
+	tmp := make(map[string]interface{})
+	bs, _ := jsoniter.Marshal(config.configures)
+	_ = jsoniter.Unmarshal(bs, &tmp)
+
+	bs, err := toml.Marshal(tmp)
 	if err != nil {
-		return herrors.ErrSysInternal.C("failed to marshal conf").D("failed to save configures").WithStack()
+		panic("failed to save configures, unable to marshal conf")
 	}
 
 	err = ioutil.WriteFile(confFile, bs, 0x666)
 	if err != nil {
-		return herrors.ErrSysInternal.C("failed to write conf file").D("failed to save configures").WithStack()
+		panic("failed to save configures,failed to write config file")
 	}
-
-	return nil
 }

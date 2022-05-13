@@ -2,6 +2,13 @@ package core
 
 import (
 	"fmt"
+	"os"
+	"os/signal"
+	"runtime"
+	"syscall"
+
+	"go.uber.org/atomic"
+
 	"github.com/drharryhe/has/common/hconf"
 	"github.com/drharryhe/has/common/herrors"
 	hlogger "github.com/drharryhe/has/common/hlogger"
@@ -9,11 +16,6 @@ import (
 	"github.com/drharryhe/has/utils/hio"
 	"github.com/drharryhe/has/utils/hrandom"
 	"github.com/drharryhe/has/utils/hruntime"
-	"go.uber.org/atomic"
-	"os"
-	"os/signal"
-	"runtime"
-	"syscall"
 )
 
 const (
@@ -27,25 +29,23 @@ const (
 	defaultErrorPercentThreshold  = 50
 )
 
-type ServerConf struct {
+type Server struct {
 	EntityConfBase
 
-	Production bool
-	MaxProcs   int
+	MaxProcs int
 }
 
-func NewServer(opt *ServerOptions, args ...htypes.Any) *Server {
-	s := new(Server)
+func NewServer(opt *ServerOptions, args ...htypes.Any) *ServerImplement {
+	s := new(ServerImplement)
 	s.init(opt, args)
 	return s
 }
 
-type Server struct {
+type ServerImplement struct {
 	Instance      IServer
 	class         string
-	conf          ServerConf
+	conf          Server
 	quitSignal    chan os.Signal //退出信号
-	options       *ServerOptions
 	router        IRouter
 	plugins       map[string]IPlugin
 	services      map[string]IService
@@ -53,28 +53,22 @@ type Server struct {
 	requestNo     atomic.Uint64
 }
 
-func (this *Server) Class() string {
+func (this *ServerImplement) Class() string {
 	return this.class
 }
 
-func (this *Server) Server() IServer {
+func (this *ServerImplement) Server() IServer {
 	return this
 }
 
-func (this *Server) IsProduction() bool {
-	return this.conf.Production
-}
-
-func (this *Server) Config() IEntityConf {
+func (this *ServerImplement) Config() IEntityConf {
 	return &this.conf
 }
 
-func (this *Server) EntityMeta() *EntityMeta {
+func (this *ServerImplement) EntityMeta() *EntityMeta {
 	if this.conf.EID == "" {
 		this.conf.EID = hrandom.UuidWithoutDash()
-		if err := hconf.Save(); err != nil {
-			hlogger.Error(err)
-		}
+		hconf.Save()
 	}
 
 	return &EntityMeta{
@@ -85,7 +79,7 @@ func (this *Server) EntityMeta() *EntityMeta {
 	}
 }
 
-func (this *Server) EntityStub() *EntityStub {
+func (this *ServerImplement) EntityStub() *EntityStub {
 	return NewEntityStub(
 		&EntityStubOptions{
 			Owner:       this,
@@ -95,33 +89,28 @@ func (this *Server) EntityStub() *EntityStub {
 		})
 }
 
-func (this *Server) Assets() IAssetManager {
+func (this *ServerImplement) Assets() IAssetManager {
 	return this.assetsManager
 }
 
-func (this *Server) Router() IRouter {
+func (this *ServerImplement) Router() IRouter {
 	return this.router
 }
 
-func (this *Server) Services() map[string]IService {
+func (this *ServerImplement) Services() map[string]IService {
 	return this.services
 }
 
-func (this *Server) init(opt *ServerOptions, args ...htypes.Any) {
+func (this *ServerImplement) init(opt *ServerOptions, args ...htypes.Any) {
 	if opt == nil {
 		panic("ServerOptions cannot be nil")
-	} else {
-		this.options = opt
 	}
 
 	hconf.Init()
-	hlogger.Init(hconf.LogOutputs())
+	hconf.Load(&this.conf)
+	hlogger.Init(hconf.LogOutputs(), hconf.LogFileName())
 
-	if err := hconf.Load(&this.conf); err != nil {
-		hlogger.Error(err)
-		panic("failed to load server conf")
-	}
-	this.class = hruntime.GetObjectName(this)
+	this.class = hruntime.GetObjectName(&this.conf)
 	this.Instance = this
 
 	if opt.AssetsManager == nil {
@@ -130,46 +119,43 @@ func (this *Server) init(opt *ServerOptions, args ...htypes.Any) {
 		this.assetsManager = opt.AssetsManager
 	}
 
-	if err := CheckAndRegisterEntity(opt.Router, opt.Router); err != nil {
-		hlogger.Critical(err.WithStack().String())
-		Panic("failed to init server")
-	}
-	if err := this.options.Router.Open(this, this.router); err != nil {
+	if err := opt.Router.Open(this, opt.Router); err != nil {
 		hlogger.Critical(err)
-		Panic("failed to init server")
+		panic("failed to init server")
 	}
-	this.router = this.options.Router
+	if err := CheckAndRegisterEntity(opt.Router, opt.Router); err != nil {
+		hlogger.Critical(err)
+		panic("failed to init server")
+	}
+	this.router = opt.Router
 
 	this.plugins = make(map[string]IPlugin)
-	for _, p := range this.options.Plugins {
-		if err := CheckAndRegisterEntity(p, this.router); err != nil {
-			hlogger.Error(err.WithStack().String())
-			Panic("failed to init Server")
-		}
+	for _, p := range opt.Plugins {
 		if err := p.Open(this, p); err != nil {
-			hlogger.Critical(err.Error())
-			Panic("failed to init server")
+			panic(err.D("failed to init server"))
+		}
+		if err := CheckAndRegisterEntity(p, this.router); err != nil {
+			panic(err.D("failed to init Server"))
 		}
 		this.plugins[p.(IEntity).Class()] = p
 	}
 
-	this.services = make(map[string]IService)
 	if err := this.router.RegisterEntity(this); err != nil {
-		hlogger.Error(err)
-		panic("failed to init Server")
+		panic(err.D("failed to init Server"))
 	}
+
+	this.services = make(map[string]IService)
 }
 
-func (this *Server) Plugin(cls string) IPlugin {
+func (this *ServerImplement) Plugin(cls string) IPlugin {
 	if this.plugins == nil {
 		return nil
 	}
 	return this.plugins[cls]
 }
 
-func (this *Server) Start() {
-	//根据配置决定是否支持多核，缺省是单核
-	//TODO 如果是docker容器，需要做特殊处理
+func (this *ServerImplement) Start() {
+	//根据配置决定是否支持多核，缺省是单核,  如果是docker容器，需要做特殊处理
 	if this.conf.MaxProcs > 0 {
 		runtime.GOMAXPROCS(this.conf.MaxProcs)
 	}
@@ -183,51 +169,40 @@ func (this *Server) Start() {
 	this.waitForQuit()
 }
 
-func (this *Server) Shutdown() {
+func (this *ServerImplement) Shutdown() {
 	this.quitSignal <- syscall.SIGQUIT
 }
 
-func (this *Server) RegisterService(service IService, args ...htypes.Any) {
-	deps := service.DependOn()
-	for _, d := range deps {
-		if this.plugins[d] == nil {
-			hlogger.Critical("service %s need plugin %s, but not found", hruntime.GetObjectName(service), d)
-			goto PANIC
-		}
-	}
+func (this *ServerImplement) RegisterService(service IService, args ...htypes.Any) {
+	var herr *herrors.Error
 
 	if entity, ok := service.(IEntity); !ok {
-		hlogger.Error(herrors.ErrSysInternal.C("Plugin %s not implement IEntity interface", hruntime.GetObjectName(service)).WithStack())
-		goto PANIC
+		herr = herrors.ErrSysInternal.New("Plugin %s not implement IEntity interface", hruntime.GetObjectName(service))
+		goto panic
 	} else {
-		if err := hconf.Load(entity.Config()); err != nil {
-			hlogger.Error(err)
-			goto PANIC
+		hconf.Load(entity.Config())
+
+		if herr = service.Open(this, service, args); herr != nil {
+			goto panic
 		}
 
-		if err := service.Open(this, service, args); err != nil {
-			hlogger.Critical(err.D("failed to open service"))
-			goto PANIC
+		if herr = this.router.RegisterService(service); herr != nil {
+			goto panic
 		}
 
-		if err := this.router.RegisterService(service); err != nil {
-			hlogger.Critical(err)
-			goto PANIC
+		if herr = this.router.RegisterEntity(entity); herr != nil {
+			goto panic
 		}
 
-		if err := this.router.RegisterEntity(entity); err != nil {
-			hlogger.Critical(err)
-			goto PANIC
-		}
-		this.services[service.Name()] = service
+		this.services[entity.(IService).Name()] = service
 	}
 	return
 
-PANIC:
-	panic("failed to register service " + hruntime.GetObjectName(service))
+panic:
+	panic(herr.D("failed to register service [%s] ", hruntime.GetObjectName(service)))
 }
 
-func (this *Server) Slot(service string, slot string) *Slot {
+func (this *ServerImplement) Slot(service string, slot string) *Slot {
 	s := this.services[service]
 	if s == nil {
 		return nil
@@ -236,12 +211,12 @@ func (this *Server) Slot(service string, slot string) *Slot {
 	return s.Slot(slot)
 }
 
-func (this *Server) RequestService(service string, slot string, params htypes.Map) (ret htypes.Any, err *herrors.Error) {
-	if this.conf.Production {
+func (this *ServerImplement) RequestService(service string, slot string, params htypes.Map) (ret htypes.Any, err *herrors.Error) {
+	if !hconf.IsDebug() {
 		defer func() {
 			e := recover()
 			if e != nil {
-				hlogger.Error(e)
+				hlogger.Error(herrors.ErrSysInternal.New(e.(error).Error()))
 			}
 		}()
 	}
@@ -249,7 +224,7 @@ func (this *Server) RequestService(service string, slot string, params htypes.Ma
 	return this.router.RequestService(service, slot, params)
 }
 
-func (this *Server) waitForQuit() {
+func (this *ServerImplement) waitForQuit() {
 	this.quitSignal = make(chan os.Signal)
 	signal.Notify(this.quitSignal,
 		os.Interrupt,
@@ -264,7 +239,7 @@ func (this *Server) waitForQuit() {
 	hlogger.Info("server exited")
 }
 
-func (this *Server) close() {
+func (this *ServerImplement) close() {
 	if this.router != nil {
 		this.router.Close()
 	}
@@ -273,69 +248,13 @@ func (this *Server) close() {
 	}
 }
 
-func (this *Server) newRequestNo() uint64 {
+func (this *ServerImplement) newRequestNo() uint64 {
 	return this.requestNo.Add(1)
 }
 
-func (this *Server) getConfigItem(ps htypes.Map) (htypes.Any, *herrors.Error) {
-	name, val, err := this.conf.EntityConfBase.GetItem(ps)
-	if err == nil {
-		return val, nil
-	} else if err.Code != herrors.ECodeSysUnhandled {
-		return nil, err
-	}
-
-	switch name {
-	case "Production":
-		return this.conf.Production, nil
-	case "MaxProcs":
-		return this.conf.MaxProcs, nil
-	}
-
-	return nil, herrors.ErrCallerInvalidRequest.C("config item %s not supported", name).WithStack()
-}
-
-func (this *Server) updateConfigItems(ps htypes.Map) *herrors.Error {
-	items, err := this.conf.EntityConfBase.SetItems(ps)
-	if err != nil && err.Code != herrors.ECodeSysUnhandled {
-		return err
-	}
-
-	for _, item := range items {
-		name := item["name"].(string)
-		val := item["value"]
-
-		switch name {
-		case "Production":
-			v, ok := val.(bool)
-			if !ok {
-				return herrors.ErrCallerInvalidRequest.C("string config item %s value invalid type", name).WithStack()
-			}
-			this.conf.Production = v
-		case "MaxProcs":
-			if v, ok := htypes.ToNumber(val); !ok {
-				return herrors.ErrCallerInvalidRequest.C("int config item %s value invalid type", name).WithStack()
-			} else {
-				this.conf.MaxProcs = int(v)
-			}
-
-		}
-	}
-
-	err = hconf.Save()
-	if err != nil {
-		hlogger.Error(err)
-	}
-	return nil
-}
-
-func (this *Server) resetConfig(ps htypes.Map) *herrors.Error {
-	this.conf.Production = false
+func (this *ServerImplement) resetConfig(ps htypes.Map) *herrors.Error {
 	this.conf.MaxProcs = 1
 
-	err := hconf.Save()
-	if err != nil {
-		hlogger.Error(err)
-	}
+	hconf.Save()
 	return nil
 }

@@ -1,13 +1,13 @@
 package core
 
 import (
+	"strings"
+
 	"github.com/drharryhe/has/common/hconf"
 	"github.com/drharryhe/has/common/herrors"
-	"github.com/drharryhe/has/common/hlogger"
 	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/utils/hrandom"
 	"github.com/drharryhe/has/utils/hruntime"
-	"strings"
 )
 
 const (
@@ -43,9 +43,7 @@ func (this *BaseRouter) Server() IServer {
 func (this *BaseRouter) EntityMeta() *EntityMeta {
 	if this.instance.(IEntity).Config().GetEID() == "" {
 		this.instance.(IEntity).Config().SetEID(hrandom.UuidWithoutDash())
-		if err := hconf.Save(); err != nil {
-			hlogger.Error(err)
-		}
+		hconf.Save()
 	}
 
 	return &EntityMeta{
@@ -56,16 +54,13 @@ func (this *BaseRouter) EntityMeta() *EntityMeta {
 	}
 }
 
-/**
-IRouter methods
-*/
-
 func (this *BaseRouter) Open(s IServer, ins IRouter) *herrors.Error {
 	this.server = s
 	this.instance = ins
-	this.class = hruntime.GetObjectName(ins)
+	this.class = hruntime.GetObjectName(ins.(IEntity).Config())
 	this.Services = make(map[string]IService)
 	this.Entities = make(map[string]IEntity)
+	hconf.Load(ins.(IEntity).Config())
 
 	return nil
 }
@@ -74,7 +69,7 @@ func (this *BaseRouter) Close() {}
 
 func (this *BaseRouter) RegisterService(s IService) *herrors.Error {
 	if this.Services[s.Name()] != nil {
-		return herrors.ErrSysInternal.C("service name %s duplicated", s.Name()).WithStack()
+		return herrors.ErrSysInternal.New("service name %s duplicated", s.Name())
 	}
 
 	this.Services[s.Name()] = s
@@ -95,7 +90,7 @@ func (this *BaseRouter) AllEntities() []*EntityMeta {
 
 func (this *BaseRouter) RegisterEntity(m IEntity) *herrors.Error {
 	if m.EntityMeta() == nil {
-		return herrors.ErrSysInternal.C("Entity %s EntityMeta is null", hruntime.GetObjectName(m)).WithStack()
+		return herrors.ErrSysInternal.New("Entity %s EntityMeta is null", hruntime.GetObjectName(m))
 	}
 
 	this.Entities[m.EntityMeta().EID] = m
@@ -105,7 +100,7 @@ func (this *BaseRouter) RegisterEntity(m IEntity) *herrors.Error {
 func (this *BaseRouter) ManageEntity(mm *EntityMeta, slot string, params htypes.Map) (htypes.Any, *herrors.Error) {
 	m := this.Entities[mm.EID]
 	if m == nil {
-		return nil, herrors.ErrSysInternal.C("Entity entity [" + mm.EID + "] not found").WithStack()
+		return nil, herrors.ErrSysInternal.New("Entity entity [" + mm.EID + "] not found")
 	}
 
 	var res SlotResponse

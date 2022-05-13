@@ -2,18 +2,22 @@ package herrors
 
 import (
 	"fmt"
+	"strings"
+
+	"github.com/drharryhe/has/common/hconf"
+	"github.com/drharryhe/has/common/hlogger"
+	"github.com/drharryhe/has/utils/hconverter"
 	"github.com/drharryhe/has/utils/hencoder"
 	"github.com/drharryhe/has/utils/hruntime"
-	"github.com/drharryhe/has/utils/htext"
-	"strings"
 )
 
 type Error struct {
 	Code        int    `json:"code"`
-	Desc        string `json:"desc,omitempty"`
+	Desc        string `json:"desc"`
 	Fingerprint string `json:"fingerprint,omitempty"`
-	Cause       string `json:"cause,omitempty"`
-	stack       []string
+	Cause       string `json:"cause"`
+
+	stack []string
 }
 
 func New(code int) *Error {
@@ -31,54 +35,62 @@ func (this *Error) Equal(err *Error) bool {
 }
 
 func (this *Error) Error() string {
-	s := fmt.Sprintf("ERROR: \t%s", this.Desc)
-	s = fmt.Sprintf("%s\r\n\t |\tCODE: %d", s, this.Code)
-	if this.Cause != "" {
-		s = fmt.Sprintf("%s\r\n\t |\tCAUSE: %s", s, this.Cause)
-	}
-	return s
+	return this.Cause
+
 }
 
-func (this *Error) String() string {
-	s := fmt.Sprintf("ERROR: \t%s", this.Desc)
-	s = fmt.Sprintf("%s\r\n\t |\tCODE: %d", s, this.Code)
-	if this.Cause != "" {
-		s = fmt.Sprintf("%s\r\n\t |\tCAUSE: %s", s, this.Cause)
+func (this *Error) New(format string, v ...interface{}) *Error {
+	err := &Error{
+		Code:  this.Code,
+		Cause: fmt.Sprintf(format, v...),
 	}
-	if len(this.stack) > 0 {
-		var tmp string
-		for _, s := range this.stack {
-			tmp = fmt.Sprintf("%s \t |\t > %s\r\n", tmp, s)
-		}
-		s = fmt.Sprintf("%s\r\n\t |\tSTACK: \r\n%s", s, tmp)
-	}
-	return s
-}
 
-func (this *Error) C(format string, v ...interface{}) *Error {
-	this.Cause = fmt.Sprintf(format, v...)
-	this.Desc = ""
-	this.stack = []string{}
-	return this
+	if hconf.IsDebug() {
+		err.log()
+	}
+
+	return err
 }
 
 func (this *Error) D(format string, v ...interface{}) *Error {
 	this.Desc = fmt.Sprintf(format, v...)
+
 	return this
 }
 
-func (this *Error) WithStack() *Error {
-	this.stack = hruntime.SprintCallers(32, 4)
+func (this *Error) log() {
+	s := fmt.Sprintf("ERROR:%s", this.Desc)
+	s = fmt.Sprintf("%s\r\n\t|CODE: %d", s, this.Code)
+	if this.Cause != "" {
+		s = fmt.Sprintf("%s\r\n\t|CAUSE: %s", s, this.Cause)
+	}
+
+	_ = this.withStack().withFingerprint()
+	if len(this.stack) > 0 {
+		var tmp string
+		for _, s := range this.stack {
+			tmp = fmt.Sprintf("%s\t| > %s\r\n", tmp, s)
+		}
+		s = fmt.Sprintf("%s\r\n\t|STACK: \r\n%s", s, tmp)
+	}
+	s = "\r\n" + s
+
+	hlogger.Error(s)
+}
+
+func (this *Error) withStack() *Error {
+	this.stack = hruntime.SprintCallers(32, 5)
 	return this
 }
 
-func (this *Error) WithFingerprint() *Error {
-	var errsps []string
+func (this *Error) withFingerprint() *Error {
+	var pointFPs []string
 	for _, s := range this.stack {
 		file, fun, line := this.parseStackItem(s)
-		errsps = append(errsps, addErrorFingerprint(file, fun, line))
+		pointFPs = append(pointFPs, addPointFingerprint(file, fun, line))
 	}
-	addStackFingerprint(hencoder.Md5ToString([]byte(strings.Join(errsps, ""))), errsps)
+	this.Fingerprint = hencoder.Md5ToString([]byte(strings.Join(pointFPs, "")))
+	addStackFingerprint(this.Fingerprint, pointFPs)
 	return this
 }
 
@@ -86,6 +98,6 @@ func (this *Error) parseStackItem(caller string) (file string, fun string, line 
 	index := strings.LastIndex(caller, "-->")
 	t := strings.TrimSpace(caller[index+3:])
 	ss := strings.Split(t, ":")
-	n, _ := htext.ParseDecimal(ss[1])
-	return ss[0], t, int(n)
+	n, _ := hconverter.String2Decimal(ss[1])
+	return ss[0], caller[:index], int(n)
 }

@@ -1,6 +1,6 @@
 package core
 
 const (
-	VarUser = "User"
-	VarIP   = "IP"
+//VarUser = "User"
+//VarIP   = "IP"
 )

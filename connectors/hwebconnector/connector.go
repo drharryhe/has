@@ -26,6 +26,10 @@ const (
 	defaultPort      = 1976
 )
 
+func New() *Connector {
+	return new(Connector)
+}
+
 type Connector struct {
 	core.BaseConnector
 
@@ -39,12 +43,10 @@ func (this *Connector) Open(gw core.IAPIGateway, ins core.IAPIConnector) *herror
 	}
 
 	if this.conf.Port == 0 {
-		hlogger.Error("Connector Port not configured properly, default port %d used", defaultPort)
 		this.conf.Port = defaultPort
 	}
 
 	if this.conf.BodyLimit <= 0 {
-		hlogger.Error("Connector BodyLimit not configured property, default value %d used", defaultBodyLimit)
 		this.conf.BodyLimit = defaultBodyLimit
 	}
 
@@ -53,18 +55,17 @@ func (this *Connector) Open(gw core.IAPIGateway, ins core.IAPIConnector) *herror
 	})
 
 	this.App.Use(cors.New())
-	this.App.Get("/:version/:api", this.handleServiceAPI)
-	this.App.Post("/:version/:api", this.handleServiceAPI)
 	this.App.Get("/error/query/:fingerprint", this.handleErrFingerprint)
 	this.App.Get("/error/statics", this.handleErrStatics)
+	this.App.Get("/:version/:api", this.handleServiceAPI)
+	this.App.Post("/:version/:api", this.handleServiceAPI)
 
 	go func() {
 		if this.conf.Tls {
 			// Create tls certificate
 			cer, err := tls.LoadX509KeyPair(this.conf.TlsCertPath, this.conf.TlsKeyPath)
 			if err != nil {
-				hlogger.Error(herrors.ErrSysInternal.C(err.Error()).D("failed to load tls certificate").WithStack())
-				panic("failed to open Connector")
+				panic(herrors.ErrSysInternal.New(err.Error()).D("failed to load tls certificate"))
 			}
 
 			config := &tls.Config{Certificates: []tls.Certificate{cer}}
@@ -72,20 +73,17 @@ func (this *Connector) Open(gw core.IAPIGateway, ins core.IAPIConnector) *herror
 			// Create custom listener
 			ln, err := tls.Listen("tcp", fmt.Sprintf(":%d", this.conf.Port), config)
 			if err != nil {
-				hlogger.Error(herrors.ErrSysInternal.C(err.Error()).D("failed to listen tls").WithStack())
-				panic("failed to open Connector")
+				panic(herrors.ErrSysInternal.New(err.Error()).D("failed to listen tls"))
 			}
 
 			err = this.App.Listener(ln)
 			if err != nil {
-				hlogger.Error(herrors.ErrSysInternal.C(err.Error()).D("failed to listen Fiber App").WithStack())
-				panic("failed to open Connector")
+				panic(herrors.ErrSysInternal.New(err.Error()).D("failed to listen Fiber App"))
 			}
 		} else {
 			err := this.App.Listen(fmt.Sprintf(":%d", this.conf.Port))
 			if err != nil {
-				hlogger.Error(herrors.ErrSysInternal.C(err.Error()).D("failed to listen Fiber App").WithStack())
-				panic("failed to open Connector")
+				panic(herrors.ErrSysInternal.New(err.Error()).D("failed to listen Fiber App"))
 			}
 		}
 	}()
@@ -94,7 +92,7 @@ func (this *Connector) Open(gw core.IAPIGateway, ins core.IAPIConnector) *herror
 }
 
 func (this *Connector) handleErrFingerprint(c *fiber.Ctx) error {
-	if !this.conf.ErrorDebug {
+	if !hconf.IsDebug() {
 		_ = c.SendString("error fingerprint query not available")
 		return nil
 	}
@@ -111,7 +109,7 @@ func (this *Connector) handleErrFingerprint(c *fiber.Ctx) error {
 }
 
 func (this *Connector) handleErrStatics(c *fiber.Ctx) error {
-	if !this.conf.ErrorDebug {
+	if !hconf.IsDebug() {
 		_ = c.SendString("error statics not available")
 		return nil
 	}
@@ -144,7 +142,7 @@ func (this *Connector) handleServiceAPI(c *fiber.Ctx) error {
 		return err
 	}
 
-	ps[core.VarIP] = c.IP()
+	ps[this.conf.AddressField] = c.IP()
 	ret, err := this.Gateway.RequestAPI(version, api, ps)
 	if err != nil {
 		this.SendResponse(c, nil, err)
@@ -168,15 +166,11 @@ func (this *Connector) SendResponse(c *fiber.Ctx, data htypes.Any, err *herrors.
 				err = err.D(trans.Translate(this.conf.Lang, err.Desc))
 			}
 		}
-
-		if this.conf.ErrorDebug {
-			_ = err.WithFingerprint()
-		}
 	}
 
 	bs, _ := this.Packer.Marshal(NewResponseData(data, err))
 	if e := c.Send(bs); e != nil {
-		hlogger.Error(herrors.ErrSysInternal.C(e.Error()).D("failed to send data").WithStack().String())
+		hlogger.Error(herrors.ErrSysInternal.New(e.Error()).D("failed to send data"))
 	}
 }
 
@@ -191,11 +185,11 @@ func (this *Connector) HandleFileRequest(c *fiber.Ctx, data htypes.Any) (bool, *
 	}
 
 	if _, ok = val["name"].(string); !ok {
-		return false, herrors.ErrCallerInvalidRequest.C("parameter [name] unavailable or invalid type").D("bad parameter").WithStack()
+		return false, herrors.ErrCallerInvalidRequest.New("parameter [name] unavailable or invalid type").D("bad parameter")
 	}
 
 	if _, ok = val["data"].([]byte); !ok {
-		return false, herrors.ErrCallerInvalidRequest.C("parameter [data] unavailable or invalid type").D("bad parameter").WithStack()
+		return false, herrors.ErrCallerInvalidRequest.New("parameter [data] unavailable or invalid type").D("bad parameter")
 	}
 
 	fname := val["name"].(string)
@@ -208,7 +202,7 @@ func (this *Connector) HandleFileRequest(c *fiber.Ctx, data htypes.Any) (bool, *
 
 		br := bytes.NewReader(fdata)
 		if _, e := io.Copy(c.Response().BodyWriter(), br); e != nil {
-			return true, herrors.ErrSysInternal.C(e.Error()).D("failed to send data")
+			return true, herrors.ErrSysInternal.New(e.Error()).D("failed to send data")
 		}
 	}
 	return true, nil
@@ -221,7 +215,7 @@ func (this *Connector) ParseFormParams(c *fiber.Ctx, ps htypes.Map) *herrors.Err
 
 	f, err := c.MultipartForm()
 	if err != nil {
-		return herrors.ErrCallerInvalidRequest.C(err.Error()).D("failed to get data of form")
+		return herrors.ErrCallerInvalidRequest.New(err.Error()).D("failed to get data of form")
 	}
 	for k, v := range f.Value {
 		ps[k] = v[0]
@@ -233,12 +227,12 @@ func (this *Connector) ParseFormParams(c *fiber.Ctx, ps htypes.Map) *herrors.Err
 				v := make(htypes.Map)
 				file, err := f.Open()
 				if err != nil {
-					return herrors.ErrCallerInvalidRequest.C(err.Error()).D("failed to open file").WithStack()
+					return herrors.ErrCallerInvalidRequest.New(err.Error()).D("failed to open file")
 				}
 				buffer := make([]byte, f.Size)
 				_, err = file.Read(buffer)
 				if err != nil {
-					return herrors.ErrCallerInvalidRequest.C(err.Error()).D("failed to read file data").WithStack()
+					return herrors.ErrCallerInvalidRequest.New(err.Error()).D("failed to read file data")
 				}
 				v["name"] = f.Filename
 				v["data"] = buffer
@@ -259,7 +253,7 @@ func (this *Connector) ParseBodyParams(c *fiber.Ctx, ps htypes.Map) *herrors.Err
 		res := make(htypes.Map)
 		err := jsoniter.Unmarshal(bs, &res)
 		if err != nil {
-			return herrors.ErrCallerInvalidRequest.D("failed to parse body").WithStack()
+			return herrors.ErrCallerInvalidRequest.New(err.Error()).D("failed to parse body")
 		}
 
 		for k, v := range res {
@@ -279,7 +273,7 @@ func (this *Connector) ParseHeaderParams(c *fiber.Ctx, ps htypes.Map) *herrors.E
 func (this *Connector) ParseQueryParams(c *fiber.Ctx) (htypes.Map, *herrors.Error) {
 	u, err := url.Parse(c.Request().URI().String())
 	if err != nil {
-		return nil, herrors.ErrCallerInvalidRequest.C(err.Error()).D("failed to parse URL").WithStack()
+		return nil, herrors.ErrCallerInvalidRequest.New(err.Error()).D("failed to parse URL")
 	}
 
 	ps := make(htypes.Map)
@@ -302,28 +296,4 @@ func (this *Connector) EntityStub() *core.EntityStub {
 
 func (this *Connector) Config() core.IEntityConf {
 	return &this.conf
-}
-
-func (this *Connector) getConfigItem(ps htypes.Map) (htypes.Any, *herrors.Error) {
-	name, val, err := this.conf.GetItem(ps)
-	if err == nil {
-		return val, nil
-	} else if err.Code != herrors.ECodeSysUnhandled {
-		return nil, err
-	} else {
-		return nil, herrors.ErrCallerInvalidRequest.C("config item %s not supported", name).WithStack()
-	}
-}
-
-func (this *Connector) updateConfigItems(ps htypes.Map) *herrors.Error {
-	_, err := this.conf.SetItems(ps)
-	if err != nil && err.Code != herrors.ECodeSysUnhandled {
-		return err
-	}
-
-	err = hconf.Save()
-	if err != nil {
-		hlogger.Error(err)
-	}
-	return nil
 }

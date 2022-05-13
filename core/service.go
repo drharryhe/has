@@ -12,9 +12,8 @@ import (
 
 	"github.com/drharryhe/has/common/hconf"
 	"github.com/drharryhe/has/common/herrors"
-	"github.com/drharryhe/has/common/hlogger"
 	"github.com/drharryhe/has/common/htypes"
-	"github.com/drharryhe/has/utils/converter"
+	"github.com/drharryhe/has/utils/hconverter"
 	"github.com/drharryhe/has/utils/hrandom"
 	"github.com/drharryhe/has/utils/hruntime"
 )
@@ -33,17 +32,15 @@ type ServiceConf struct {
 	EntityConfBase
 
 	Name         string
-	LimitedSlots []string
+	LimitedSlots string
 }
 
 type Service struct {
 	server   IServer
 	instance IService
 
-	conf             *IEntityConf
 	args             []htypes.Any
 	class            string
-	name             string
 	slots            map[string]*Slot
 	slotHandlers     map[string]*MethodCaller
 	slotHandlerNames map[string]string
@@ -52,7 +49,30 @@ type Service struct {
 }
 
 func (this *Service) Name() string {
-	return this.name
+	val, err := this.instance.(IEntity).EntityStub().GetConfigItem("Name")
+	if err != nil {
+		panic(err)
+	}
+	if val.(string) == "" {
+		panic(herrors.ErrSysInternal.New("Service %s name not configured", this.class).D("failed to open service"))
+	}
+
+	return val.(string)
+}
+
+func (this *Service) LimitedSlots() []string {
+	val, err := this.instance.(IEntity).EntityStub().GetConfigItem("LimitedSlots")
+	if err != nil || strings.TrimSpace(val.(string)) == "" {
+		return nil
+	}
+
+	ss := strings.Split(val.(string), ",")
+	var ret []string
+	for _, v := range ss {
+		ret = append(ret, strings.TrimSpace(v))
+	}
+
+	return ret
 }
 
 func (this *Service) Class() string {
@@ -63,16 +83,10 @@ func (this *Service) Server() IServer {
 	return this.server
 }
 
-func (this *Service) Config() htypes.Any {
-	return this.conf
-}
-
 func (this *Service) EntityMeta() *EntityMeta {
 	if this.instance.(IEntity).Config().GetEID() == "" {
 		this.instance.(IEntity).Config().SetEID(hrandom.UuidWithoutDash())
-		if err := hconf.Save(); err != nil {
-			hlogger.Error(err)
-		}
+		hconf.Save()
 	}
 
 	return &EntityMeta{
@@ -83,21 +97,19 @@ func (this *Service) EntityMeta() *EntityMeta {
 	}
 }
 
-func (this *Service) DependOn() []string {
-	return nil
+func (this *Service) UsePlugin(name string) IPlugin {
+	return this.Server().Plugin(name)
 }
 
 func (this *Service) Open(s IServer, instance IService, args ...htypes.Any) *herrors.Error {
-	this.class = hruntime.GetObjectName(instance)
+	this.class = hruntime.GetObjectName(instance.(IEntity).Config())
 	this.instance = instance
 
-	if err := hconf.Load(this.instance.(IEntity).Config()); err != nil {
-		return err
-	}
+	hconf.Load(this.instance.(IEntity).Config())
 
 	this.server = s
-	if this.instance.(IEntity).Config().(*ServiceConf).Name == "" {
-		return herrors.ErrSysInternal.C("Service %s name not configured", this.class).D("failed to open service").WithStack()
+	if this.Name() == "" {
+		return herrors.ErrSysInternal.New("Service %s name not configured", this.class).D("failed to open service")
 	}
 
 	if err := this.loadSlots(); err != nil {
@@ -108,7 +120,9 @@ func (this *Service) Open(s IServer, instance IService, args ...htypes.Any) *her
 		return err
 	}
 
-	return this.initLimiter()
+	this.initLimiter()
+
+	return nil
 }
 
 func (this *Service) Close() {
@@ -140,7 +154,7 @@ func (this *Service) Request(slot string, params htypes.Map) (htypes.Any, *herro
 
 	s := this.slots[slot]
 	if s == nil || s.Disabled {
-		return nil, herrors.ErrCallerInvalidRequest.C("slot %s not found or disabled", slot).WithStack()
+		return nil, herrors.ErrCallerInvalidRequest.New("slot %s not found or disabled", slot)
 	}
 
 	//处理传入参数
@@ -153,27 +167,43 @@ func (this *Service) Request(slot string, params htypes.Map) (htypes.Any, *herro
 	case NativeLang:
 		return this.callSlotHandler(string(s.Impl), params)
 	default:
-		return nil, herrors.ErrSysInternal.C("slot language %s not implemented", s.Lang)
+		return nil, herrors.ErrSysInternal.New("slot language %s not implemented", s.Lang)
 	}
 }
 
-func (this *Service) SetResponse(res *SlotResponse, data htypes.Any, err *herrors.Error) {
-	if err == nil {
-		res.Error = herrors.ErrOK
-	}
+func (this *Service) Response(res *SlotResponse, data htypes.Any, err *herrors.Error) {
+	res.Error = err
 	res.Data = data
+}
+
+func (this *Service) ParamInt64(ps htypes.Map, field string) (int64, bool) {
+	v, ok := ps[field].(float64)
+	if !ok {
+		return 0, false
+	}
+	return int64(v), true
+}
+
+func (this *Service) ParamBool(ps htypes.Map, field string) (bool, bool) {
+	v, ok := ps[field].(bool)
+	return v, ok
+}
+
+func (this *Service) ParamString(ps htypes.Map, field string) (string, bool) {
+	v, ok := ps[field].(string)
+	return v, ok
 }
 
 func (this *Service) loadSlots() *herrors.Error {
 	bs, err := this.server.Assets().File(fmt.Sprintf("%s%c%s%s", SlotDir, os.PathSeparator,
-		this.name, SlotFileSuffix))
+		this.Name(), SlotFileSuffix))
 	if err != nil {
 		return err
 	}
 	var slots []Slot
 
 	if err := jsoniter.Unmarshal(bs, &slots); err != nil {
-		return herrors.ErrSysInternal.C(err.Error()).D("failed to unmarshal service [%s] slot", this.class).WithStack()
+		return herrors.ErrSysInternal.New(err.Error()).D("failed to unmarshal service [%s] slot", this.class)
 	}
 
 	this.slots = make(map[string]*Slot)
@@ -211,6 +241,7 @@ func (this *Service) mountSlots(instance IService) *herrors.Error {
 		if mtype.NumIn() != 3 {
 			continue
 		}
+
 		ctxType := mtype.In(1)
 		if ctxType.Kind() != reflect.Map {
 			continue
@@ -228,7 +259,7 @@ func (this *Service) mountSlots(instance IService) *herrors.Error {
 
 	for _, s := range this.slotHandlerNames {
 		if this.slotHandlers[s] == nil {
-			return herrors.ErrSysInternal.C("service %s slot %s not implemented", this.class, s).D("failed to mount service slots").WithStack()
+			return herrors.ErrSysInternal.New("service [%s] slot [%s] not implemented", this.class, s).D("failed to mount service slots")
 		}
 	}
 
@@ -246,7 +277,7 @@ func (this *Service) callSlotHandler(slot string, data htypes.Any) (htypes.Any, 
 			return res.Data, nil
 		}
 	} else {
-		return nil, herrors.ErrCallerInvalidRequest.C("service %s slot %s not found", this.class, slot).D("failed to call slot").WithStack()
+		return nil, herrors.ErrCallerInvalidRequest.New("service %s slot %s not found", this.class, slot).D("failed to call slot")
 	}
 }
 
@@ -274,17 +305,19 @@ func (this *Service) checkParams(ps htypes.Map, def []SlotParam) *herrors.Error 
 				if p.Default[0] == '$' {
 					if v = ps[p.Default[1:]]; v != nil {
 						ps[p.Name] = v
+					} else {
+						continue
 					}
 				}
 			} else if p.Required == true {
-				return herrors.ErrCallerInvalidRequest.C("required parameter %s not found", p.Name).WithStack()
+				return herrors.ErrCallerInvalidRequest.New("required parameter [%s] not found", p.Name)
 			} else {
 				continue
 			}
 		}
 
 		if err := htypes.Validate(v, p.Type); err != nil {
-			return herrors.ErrCallerInvalidRequest.C(err.Error()).WithStack()
+			return herrors.ErrCallerInvalidRequest.New(err.Error())
 		}
 
 		if p.Validator != "" {
@@ -303,38 +336,36 @@ func (this *Service) checkParams(ps htypes.Map, def []SlotParam) *herrors.Error 
 	return nil
 }
 
-func (this *Service) initLimiter() *herrors.Error {
+func (this *Service) initLimiter() {
 	this.requestLimiters = make(map[string]ratelimit.Limiter)
 
-	if len(this.instance.(IEntity).Config().(*ServiceConf).LimitedSlots) == 0 {
+	limitSlots := this.LimitedSlots()
+	if len(limitSlots) == 0 {
 		this.limiter = nil
-		return nil
+		return
 	}
 
-	for _, s := range this.instance.(IEntity).Config().(*ServiceConf).LimitedSlots {
+	for _, s := range limitSlots {
 		vv := strings.Split(s, ":")
 		if len(vv) == 1 {
-			l, ok := converter.String2NumberDecimal(s)
+			l, ok := hconverter.String2NumberDecimal(s)
 			if !ok || l < 0 {
-				hlogger.Error("invalid service limiter config. [%s]:%s", this.class, s)
-				return herrors.ErrSysInternal.C("invalid service limiter config. [%s]:%s", this.class, s).WithStack()
+				panic(herrors.ErrSysInternal.New("invalid service limiter config. [%s]:%s", this.class, s))
 			}
 			if l == 0 {
 				l = defaultLimiter
 			}
 			this.limiter = ratelimit.New(int(l))
 		} else if len(vv) != 2 {
-			return herrors.ErrSysInternal.C("invalid service limiter config. [%s]:%s", this.class, s)
+			panic(herrors.ErrSysInternal.New("invalid service limiter config. [%s]:%s", this.class, s))
 		} else {
-			l, ok := converter.String2NumberDecimal(vv[1])
+			l, ok := hconverter.String2NumberDecimal(vv[1])
 			if !ok || l < 0 {
-				return herrors.ErrSysInternal.C("invalid service limiter config. [%s]:%s", this.class, vv[1])
+				panic(herrors.ErrSysInternal.New("invalid service limiter config. [%s]:%s", this.class, vv[1]))
 			}
 			this.requestLimiters[strings.TrimSpace(vv[0])] = ratelimit.New(int(l))
 		}
 	}
-
-	return nil
 }
 
 func (this *Service) validateVar(v htypes.Any, tag string) *herrors.Error {
@@ -344,62 +375,12 @@ func (this *Service) validateVar(v htypes.Any, tag string) *herrors.Error {
 
 	k := reflect.TypeOf(v).Kind()
 	if k != reflect.String && k != reflect.Float64 && k != reflect.Float32 && k != reflect.Uint && k != reflect.Uint8 && k != reflect.Uint16 && k != reflect.Uint32 && k != reflect.Uint64 && k != reflect.Int && k != reflect.Int8 && k != reflect.Int16 && k != reflect.Int32 && k != reflect.Int64 {
-		return herrors.ErrCallerInvalidRequest.C("invalid var kind %s", htypes.GetKindName(k)).WithStack()
+		return herrors.ErrCallerInvalidRequest.New("invalid var kind %s", htypes.GetKindName(k))
 	}
 
 	if err := validate.Var(v, tag); err != nil {
-		return herrors.ErrCallerInvalidRequest.C(err.Error()).WithStack()
+		return herrors.ErrCallerInvalidRequest.New(err.Error())
 	}
 
-	return nil
-}
-
-// 需要被具体的Service 调用
-func (this *Service) GetConfigItem(ps htypes.Map) (htypes.Any, *herrors.Error) {
-	name, val, err := this.instance.(IEntity).Config().(*EntityConfBase).GetItem(ps)
-	if err == nil {
-		return val, nil
-	} else if err.Code != herrors.ECodeSysUnhandled {
-		return nil, err
-	}
-
-	switch name {
-	case "LimitedSlots":
-		return this.instance.(IEntity).Config().(*ServiceConf).LimitedSlots, nil
-	case "Name":
-		return this.instance.(IEntity).Config().(*ServiceConf).Name, nil
-	}
-
-	return nil, herrors.ErrSysUnhandled
-}
-
-// 需要被具体的Service 调用
-func (this *Service) UpdateConfigItems(ps htypes.Map) *herrors.Error {
-	items, err := this.instance.(IEntity).Config().(*EntityConfBase).SetItems(ps)
-	if err == nil {
-		return nil
-	} else if err.Code != herrors.ECodeSysUnhandled {
-		return err
-	}
-
-	for _, item := range items {
-		name := item["name"].(string)
-		val := item["value"]
-
-		switch name {
-		case "LimitedSlots":
-			v, ok := val.([]string)
-			if !ok {
-				return herrors.ErrCallerInvalidRequest.C("int config item %s value invalid type", name)
-			} else {
-				this.instance.(IEntity).Config().(*ServiceConf).LimitedSlots = v
-			}
-		}
-	}
-
-	err = hconf.Save()
-	if err != nil {
-		hlogger.Error(err)
-	}
 	return nil
 }

@@ -6,6 +6,10 @@ import (
 	"github.com/drharryhe/has/core"
 )
 
+func New() *Router {
+	return new(Router)
+}
+
 type Router struct {
 	core.BaseRouter
 	conf LocalRouter
@@ -25,11 +29,11 @@ func (this *Router) RequestService(service string, slot string, params htypes.Ma
 	s := this.Services[service]
 
 	if s == nil || s.(core.IEntity).Config().GetDisabled() {
-		return nil, herrors.ErrCallerInvalidRequest.C("service %s not available", service)
+		return nil, herrors.ErrCallerInvalidRequest.New("service %s not available", service)
 	}
 
 	if s.Slot(slot) == nil || s.Slot(slot).Disabled {
-		return nil, herrors.ErrCallerInvalidRequest.C("slot %s not available", slot)
+		return nil, herrors.ErrCallerInvalidRequest.New("slot %s not available", slot)
 	}
 
 	return s.Request(slot, params)

@@ -2,15 +2,16 @@ package core
 
 import (
 	"fmt"
-	"github.com/drharryhe/has/common/herrors"
-	"github.com/drharryhe/has/common/hlogger"
-	"github.com/drharryhe/has/utils/hio"
-	"github.com/drharryhe/has/utils/hruntime"
-	jsoniter "github.com/json-iterator/go"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
+
+	jsoniter "github.com/json-iterator/go"
+
+	"github.com/drharryhe/has/common/herrors"
+	"github.com/drharryhe/has/utils/hio"
+	"github.com/drharryhe/has/utils/hruntime"
 )
 
 const (
@@ -55,14 +56,12 @@ func (this *DefaultAPIi18n) Open() *herrors.Error {
 		v := make(map[string]string)
 		bs, err := hio.ReadFile(fmt.Sprintf("%s%c%s", LangDir, os.PathSeparator, info.Name()))
 		if err != nil {
-			hlogger.Error(err)
-			return fmt.Errorf("failed to read file %s", info.Name())
+			return herrors.ErrSysInternal.New(err.Error())
 		}
 
 		err = jsoniter.Unmarshal(bs, &v)
 		if err != nil {
-			hlogger.Error(err)
-			return fmt.Errorf("failed to unmarshal file %s", info.Name())
+			return herrors.ErrSysInternal.New(err.Error())
 		}
 
 		this.dirs[ss[0]] = v
@@ -71,7 +70,7 @@ func (this *DefaultAPIi18n) Open() *herrors.Error {
 	})
 
 	if err != nil {
-		return herrors.ErrSysInternal.C(err.Error()).WithStack()
+		return herrors.ErrSysInternal.New(err.Error())
 	}
 
 	this.class = hruntime.GetObjectName(this)

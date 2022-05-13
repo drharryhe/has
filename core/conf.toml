@@ -1,7 +1,13 @@
-[ServerConf]
-LogOutputs = ["multifiles", "console"]
+LogFileName = 'sa.log'
+LogOutputs = ['file', 'console']
+Version = '1.0'
+Debug = true
 
-[ApiGatewayConf]
+
+[Server]
+MaxProcs = 1
+
+[APIGateway]
 BreakerLimitApi = true
 BreakerLimitIP = true
 BreakerLimitUser = true
@@ -12,3 +18,5 @@ BreakerMaxConcurrentRequest = 10
 BreakerRequestVolumeThreshold = 10
 BreakerSleepWindow = 10
 BreakerErrorPercentThreshold = 10
+AddressField = 'IP'
+UserField = 'User'

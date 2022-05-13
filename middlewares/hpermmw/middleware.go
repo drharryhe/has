@@ -5,14 +5,15 @@
 package hpermmw
 
 import (
+	"strings"
+
 	"github.com/antonmedv/expr"
+	jsoniter "github.com/json-iterator/go"
+
 	"github.com/drharryhe/has/common/herrors"
-	"github.com/drharryhe/has/common/hlogger"
 	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/core"
 	"github.com/drharryhe/has/utils/hio"
-	jsoniter "github.com/json-iterator/go"
-	"strings"
 )
 
 const (
@@ -20,6 +21,10 @@ const (
 )
 
 func New(funcWrapper IPermFuncWrapper) *Middleware {
+	if funcWrapper == nil {
+		panic("permFunction is nill")
+	}
+
 	mw := new(Middleware)
 	mw.funcWrapper = funcWrapper
 	return mw
@@ -29,34 +34,41 @@ type Middleware struct {
 	core.InMiddleware
 
 	conf        PermMiddleware
-	perms       map[string]map[string]map[string]*Perm
+	perms       map[string] /*version*/ map[string] /*api*/ map[string] /*if*/ *Perm
 	functions   htypes.Map
 	funcWrapper IPermFuncWrapper
 }
 
 func (this *Middleware) Open(gw core.IAPIGateway, ins core.IAPIMiddleware) *herrors.Error {
-	_ = this.BaseMiddleware.Open(gw, ins)
+	err := this.BaseMiddleware.Open(gw, ins)
+	if err != nil {
+		return err
+	}
+
 	this.funcWrapper.SetServer(gw.Server())
-	this.AddFunctions(this.funcWrapper.Functions())
+	this.addFunctions(this.funcWrapper.Functions())
 	return this.loadPerms()
 }
 
-func (this *Middleware) HandleIn(seq uint64, service string, api string, data htypes.Map) (bool, *herrors.Error) {
+func (this *Middleware) HandleIn(seq uint64, version string, api string, data htypes.Map) (bool, *herrors.Error) {
 	env := make(htypes.Map)
 	for k, v := range data {
 		env[k] = v
 	}
-	if this.perms[service] != nil && this.perms[service][api] != nil {
-		ps := this.perms[service][api]
-		for iff, perm := range ps {
+	if this.perms[version] != nil && this.perms[version][api] != nil {
+		ps := this.perms[version][api]
+		for _, perm := range ps {
 			if perm.Disabled {
 				continue
 			}
-			if pass, err := this.evaluateBool(iff, this.prepareEnv(env)); err != nil {
-				hlogger.Error(err.String())
+			if pass, err := this.evaluateBool(perm.If, this.prepareEnv(env)); err != nil {
 				return false, err.D("failed to check permission")
-			} else if !pass {
-				return false, herrors.ErrCallerUnauthorizedAccess
+			} else if pass {
+				if pass, err = this.evaluateBool(perm.Condition, this.prepareEnv(env)); err != nil {
+					return false, err.D("failed to parse condition")
+				} else if !pass {
+					return false, herrors.ErrCallerUnauthorizedAccess.New("request forbidden by middleware").D("unauthorized access")
+				}
 			}
 		}
 	}
@@ -78,7 +90,7 @@ func (this *Middleware) EntityStub() *core.EntityStub {
 		})
 }
 
-func (this *Middleware) AddFunctions(funcs htypes.Map) {
+func (this *Middleware) addFunctions(funcs htypes.Map) {
 	this.functions = funcs
 }
 
@@ -92,26 +104,26 @@ func (this *Middleware) prepareEnv(data htypes.Map) htypes.Map {
 func (this *Middleware) loadPerms() *herrors.Error {
 	bs, err := hio.ReadFile(PermFile)
 	if err != nil {
-		return herrors.ErrSysInternal.C(err.Error()).D("failed to load perm.json").WithStack()
+		return herrors.ErrSysInternal.New(err.Error()).D("failed to load perm.json")
 	}
 
 	var perms []Perm
 	if err = jsoniter.Unmarshal(bs, &perms); err != nil {
-		return herrors.ErrSysInternal.C("failed to unmarshal perm.json").WithStack()
+		return herrors.ErrSysInternal.New("failed to unmarshal perm.json")
 	}
 
 	this.perms = make(map[string]map[string]map[string]*Perm)
 	for i := range perms {
-		if this.perms[perms[i].Service] == nil {
-			this.perms[perms[i].Service] = make(map[string]map[string]*Perm)
+		if this.perms[perms[i].Version] == nil {
+			this.perms[perms[i].Version] = make(map[string]map[string]*Perm)
 		}
 		apis := strings.Split(perms[i].API, ",")
 		for _, api := range apis {
-			if this.perms[perms[i].Service][api] == nil {
-				this.perms[perms[i].Service][api] = make(map[string]*Perm)
-				this.perms[perms[i].Service][api][perms[i].If] = &perms[i]
+			if this.perms[perms[i].Version][api] == nil {
+				this.perms[perms[i].Version][api] = make(map[string]*Perm)
+				this.perms[perms[i].Version][api][perms[i].If] = &perms[i]
 			} else {
-				this.perms[perms[i].Service][api][perms[i].If] = &perms[i]
+				this.perms[perms[i].Version][api][perms[i].If] = &perms[i]
 			}
 		}
 	}
@@ -126,7 +138,7 @@ func (this *Middleware) evaluateBool(exp string, env htypes.Any) (bool, *herrors
 	}
 
 	if out, err := expr.Run(program, env); err != nil {
-		return false, herrors.ErrCallerInvalidRequest.C(err.Error()).D("execute expression failed").WithStack()
+		return false, herrors.ErrSysInternal.New(err.Error()).D("execute expression failed")
 	} else {
 		return out.(bool), nil
 	}

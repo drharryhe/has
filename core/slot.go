@@ -7,6 +7,7 @@ import (
 
 type Slot struct {
 	Name     string      `json:"name"`
+	Desc     string      `json:"-"`
 	Disabled bool        `json:"disabled"`
 	Params   []SlotParam `json:"params"`
 	Lang     string      `json:"lang"`

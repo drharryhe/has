@@ -1,5 +1,12 @@
 [SessionMiddleware]
 SessionService = "session"
 VerifySlot = "verifyToken"
-WhiteList = ["aa:login,checkLogin"]
-MagicToken = 123456789
+WhiteList = ["v1:login,checkLogin"]
+InUserField = 'User'
+InTokenField = 'Token'
+InAddressField = 'IP'
+InAgentField = "Agent"
+OutUserField = 'user'
+OutTokenField = 'token'
+OutAddressField = 'ip'
+OutAgentField = 'agent'

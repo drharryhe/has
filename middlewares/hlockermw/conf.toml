@@ -1,0 +1,6 @@
+[LockerMiddleware]
+MaxFails = 3
+UserField = 'User'
+Model = 'whiltelist'
+APIeList = ["v1:api1,api2", 'v2:api1,api2']
+LockDuration = 10

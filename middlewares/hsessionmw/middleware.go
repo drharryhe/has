@@ -1,11 +1,16 @@
 package hsessionmw
 
 import (
+	"strings"
+
 	"github.com/drharryhe/has/common/herrors"
 	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/core"
-	"strings"
 )
+
+func New() core.IAPIMiddleware {
+	return new(Middleware)
+}
 
 type Middleware struct {
 	core.InMiddleware
@@ -17,11 +22,11 @@ func (this *Middleware) Open(gw core.IAPIGateway, ins core.IAPIMiddleware) *herr
 	_ = this.BaseMiddleware.Open(gw, ins)
 
 	if this.conf.SessionService == "" {
-		return herrors.ErrSysInternal.C("SessionService not configured").WithStack()
+		return herrors.ErrSysInternal.New("SessionService not configured")
 	}
 
 	if this.conf.VerifySlot == "" {
-		return herrors.ErrSysInternal.C("VerifySlot not configured").WithStack()
+		return herrors.ErrSysInternal.New("VerifySlot not configured")
 	}
 
 	this.parseWhitelist()
@@ -35,7 +40,13 @@ func (this *Middleware) HandleIn(seq uint64, version string, api string, data ht
 		return false, nil
 	}
 
-	_, err := this.Server().RequestService(this.conf.SessionService, this.conf.VerifySlot, data)
+	_, err := this.Server().RequestService(this.conf.SessionService, this.conf.VerifySlot,
+		htypes.Map{
+			this.conf.OutUserField:    data[this.conf.InUserField],
+			this.conf.OutTokenField:   data[this.conf.InTokenField],
+			this.conf.OutAddressField: data[this.conf.InAddressField],
+			this.conf.OutAgentField:   data[this.conf.InAgentField],
+		})
 	if err != nil {
 		return true, err
 	} else {
@@ -62,7 +73,7 @@ func (this *Middleware) parseWhitelist() {
 	for _, s := range this.conf.WhiteList {
 		kv := strings.Split(s, ":")
 		if len(kv) != 2 {
-			continue
+			panic(herrors.ErrSysInternal.New("invalid %s config:%s", this.Class(), s))
 		}
 		if this.whiteList[kv[0]] == nil {
 			this.whiteList[kv[0]] = make(map[string]bool)

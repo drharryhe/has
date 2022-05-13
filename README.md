@@ -33,30 +33,29 @@
 * 所有需要管理的entity，class定义中不能包括下划线 _
 
 ## 特点
-
 * 基于RPCX（如果是单进程服务，不通过RPC调用以提交效率）
-* 通过HTTP支持为其他语言提供接口（RPCX Gateway)
+* 清晰的分层结构，便于用户进行定制  
 * 提供常用基础包（参考：go-frame，go-zero)
 * 自动定义API接口
-* 自动进行API检查
-* 便利的安全工具插件
+* 自动进行API参数检查
 
 ## 目录结构
-
-* admin: 管理工具
-* apigateway: api网关
+* common: 通用包，包括配置hconf, 错误处理 herrors, 日志记录hlogger
 * core: 微服务核心框架代码，包括只有框架紧密集成的组件
 * plugins: 插件
 * services: 服务
-* lib: 公用函数库
-* examples: 示例代码
+* connectors: 连接器
+* middlewares: 中间件
+* routers: 服务路由
+* datapackers: 数据打包类  
+* utils: 工具类
+
 
 ## 使用规范
-
-1. 所有错误不在使用原生error包，而是使用github.com/pkg/errors
+1. 所有错误不在使用原生error包，而是使用框架自带的 herrors
 
 ## 更新记录
-
+* 基于redis的路由机制 @2022.5
 * 支持API版本号 @2021.6
 * 支持服务对插件的依赖声明和检查 @2021.6
 * 支持埋点 @2021.6
@@ -70,28 +69,18 @@
 * fileservice支持minio存取 @2021.10
 
 ## TODO
-
-* 自己写一个基于redis的路由机制
 * 分布式事务（DT）
 * 配套AdminWeb 服务
     - 服务管理
     - 服务监视（集成grafana）
 * 应用安全监控与防御
 * 创建分布式临界资源分配服务 GlobalResourceService
-* 服务分类(通过配置server的ip地址解决1)
-    - 公开服务，可以通过connector暴露slot
-    - 内部服务, 不能通过connector调用slot
-* 规范plugin
-    - 具体plugin的方法通过统一方法暴露出去，而不是在直接
-* 优化server初始化时panic的提示
 * 多级状态机
     - 使用mysql
     - 支持状态依赖
     - 支持状态分级
     - 支持状态自动合并
     - 死循环检测
-* 新服务等组件开发
-    - 二维码融合支付服务
 * 添加待签名API类型（partially done）
 * 集群化能力
     - 增加一个反代，来实现http-rpcx的负载均衡，同时支持反代的集群部署

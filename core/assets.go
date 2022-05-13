@@ -19,7 +19,7 @@ type FileAssets struct {
 func (this *FileAssets) File(p string) ([]byte, *herrors.Error) {
 	bs, err := hio.ReadFile(p)
 	if err != nil {
-		return nil, herrors.ErrSysInternal.C(err.Error()).WithStack()
+		return nil, herrors.ErrSysInternal.New(err.Error())
 	}
 
 	return bs, nil

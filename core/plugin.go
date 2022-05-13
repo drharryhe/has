@@ -3,7 +3,6 @@ package core
 import (
 	"github.com/drharryhe/has/common/hconf"
 	"github.com/drharryhe/has/common/herrors"
-	"github.com/drharryhe/has/common/hlogger"
 	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/utils/hrandom"
 	"github.com/drharryhe/has/utils/hruntime"
@@ -11,8 +10,6 @@ import (
 
 type PluginConf struct {
 	EntityConfBase
-
-	Name string
 }
 
 type BasePlugin struct {
@@ -25,6 +22,9 @@ func (this *BasePlugin) Open(s IServer, ins IPlugin) *herrors.Error {
 	this.server = s
 	this.instance = ins
 	this.class = hruntime.GetObjectName(ins.(IEntity).Config())
+
+	hconf.Load(ins.(IEntity).Config())
+
 	return nil
 }
 
@@ -42,9 +42,7 @@ func (this *BasePlugin) Class() string {
 func (this *BasePlugin) EntityMeta() *EntityMeta {
 	if this.instance.(IEntity).Config().GetEID() == "" {
 		this.instance.(IEntity).Config().SetEID(hrandom.UuidWithoutDash())
-		if err := hconf.Save(); err != nil {
-			hlogger.Error(err)
-		}
+		hconf.Save()
 	}
 
 	return &EntityMeta{
@@ -56,7 +54,6 @@ func (this *BasePlugin) EntityMeta() *EntityMeta {
 }
 
 func (this *BasePlugin) Capability() htypes.Any {
-	hlogger.Error(this.Class() + "Capability not implemented")
-
+	panic(herrors.ErrSysInternal.New(this.Class() + "Capability not implemented"))
 	return nil
 }

@@ -2,20 +2,18 @@ package hwebconnector
 
 import (
 	"fmt"
-	"github.com/drharryhe/has/common/hconf"
-	jsoniter "github.com/json-iterator/go"
 	"testing"
+
+	jsoniter "github.com/json-iterator/go"
+
+	"github.com/drharryhe/has/common/hconf"
 )
 
 func TestConf(t *testing.T) {
 	hconf.Init()
 
 	var conf WebConnector
-	err := hconf.Load(&conf)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	hconf.Load(&conf)
 
 	bs, _ := jsoniter.Marshal(&conf)
 	fmt.Println(string(bs))

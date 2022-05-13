@@ -3,8 +3,6 @@ package core
 import (
 	"github.com/drharryhe/has/common/hconf"
 	"github.com/drharryhe/has/common/herrors"
-	"github.com/drharryhe/has/common/hlogger"
-	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/utils/hrandom"
 	"github.com/drharryhe/has/utils/hruntime"
 )
@@ -41,16 +39,18 @@ func (this *BaseConnector) Open(gw IAPIGateway, ins IAPIConnector) *herrors.Erro
 	this.instance = ins
 	this.class = hruntime.GetObjectName(ins.(IEntity).Config())
 
+	hconf.Load(ins.(IEntity).Config())
+
 	if val, err := ins.(IEntity).EntityStub().GetConfigItem("Packer"); err != nil {
 		return err
 	} else {
 		packer, _ := val.(string)
 		if packer == "" {
-			return herrors.ErrSysInternal.C("connector %s 's packer not configured or invalid type", this.class).WithStack()
+			return herrors.ErrSysInternal.New("connector %s 's packer not configured or invalid type", this.class)
 		}
 		this.Packer = this.Gateway.Packer(val.(string))
 		if this.Packer == nil {
-			return herrors.ErrSysInternal.C("packer [" + packer + "] not found").WithStack()
+			return herrors.ErrSysInternal.New("packer [" + packer + "] not found")
 		}
 	}
 
@@ -71,9 +71,7 @@ func (this *BaseConnector) Server() IServer {
 func (this *BaseConnector) EntityMeta() *EntityMeta {
 	if this.instance.(IEntity).Config().GetEID() == "" {
 		this.instance.(IEntity).Config().SetEID(hrandom.UuidWithoutDash())
-		if err := hconf.Save(); err != nil {
-			hlogger.Error(err)
-		}
+		hconf.Save()
 	}
 
 	return &EntityMeta{
@@ -82,61 +80,4 @@ func (this *BaseConnector) EntityMeta() *EntityMeta {
 		Type:      EntityTypeConnector,
 		Class:     this.class,
 	}
-}
-
-// 要被具体的Connector 调用
-func (this *BaseConnector) GetConfigItem(ps htypes.Map) (htypes.Any, *herrors.Error) {
-	name, val, err := this.instance.(IEntity).Config().(*EntityConfBase).GetItem(ps)
-	if err == nil {
-		return val, nil
-	} else if err.Code != herrors.ECodeSysUnhandled {
-		return nil, err
-	}
-
-	switch name {
-	case "Lang":
-		return this.instance.(IEntity).Config().(*ConnectorConf).Lang, nil
-	case "Packer":
-		return this.instance.(IEntity).Config().(*ConnectorConf).Packer, nil
-	}
-
-	return nil, herrors.ErrSysUnhandled
-}
-
-// 需要被具体的Connector 调用
-func (this *BaseConnector) UpdateConfigItems(ps htypes.Map) *herrors.Error {
-	items, err := this.instance.(IEntity).Config().(*EntityConfBase).SetItems(ps)
-	if err == nil {
-		return nil
-	} else if err.Code != herrors.ECodeSysUnhandled {
-		return err
-	}
-
-	for _, item := range items {
-		name := item["name"].(string)
-		val := item["value"]
-
-		switch name {
-		case "Lang":
-			v, ok := val.(string)
-			if !ok {
-				return herrors.ErrCallerInvalidRequest.C("int config item %s value invalid type", name).WithStack()
-			} else {
-				this.instance.(IEntity).Config().(*ConnectorConf).Lang = v
-			}
-		case "Packer":
-			v, ok := val.(string)
-			if !ok {
-				return herrors.ErrCallerInvalidRequest.C("int config item %s value invalid type", name).WithStack()
-			} else {
-				this.instance.(IEntity).Config().(*ConnectorConf).Packer = v
-			}
-		}
-	}
-
-	err = hconf.Save()
-	if err != nil {
-		hlogger.Error(err)
-	}
-	return nil
 }

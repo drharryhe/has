@@ -24,7 +24,6 @@ type IEntityConf interface {
 type IServer interface {
 	Start()
 	Shutdown()
-	IsProduction() bool
 
 	Router() IRouter
 	Plugin(cls string) IPlugin
@@ -42,7 +41,7 @@ type IService interface {
 	Name() string
 
 	//插件依赖申请
-	DependOn() (plugins []string)
+	UsePlugin(name string) IPlugin
 
 	//槽相关方法
 	Slot(slot string) *Slot
@@ -79,7 +78,7 @@ type IAPIConnector interface {
 }
 
 type IAPIDataPacker interface {
-	Open() *herrors.Error
+	Open(gw IAPIGateway, ins IAPIDataPacker) *herrors.Error
 	Close()
 	Marshal(data htypes.Any) ([]byte, *herrors.Error)
 	Unmarshal(bytes []byte) (htypes.Any, *herrors.Error)

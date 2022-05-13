@@ -1,0 +1,12 @@
+[RedisRouter]
+Database = 0
+RedisServers = ['localhost:6379']
+RedisUserName = ''
+RedisPassword = ''
+RpcxAddr = '127.0.0.1:3010'
+Cluster = false
+
+
+
+
+

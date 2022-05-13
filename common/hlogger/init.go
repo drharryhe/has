@@ -15,19 +15,16 @@ func Init(outputs []string, args ...interface{}) {
 				filePath = defaultLogFile
 			} else {
 				filePath = args[0].(string)
+				if filePath == "" {
+					filePath = defaultLogFile
+				}
 			}
 			if err := SetLogger(AdapterMultiFiles, fmt.Sprintf("{\"filename\":\"%s\"}", filePath)); err != nil {
-				fmt.Println(err)
-				panic("init hlogger failed.")
-			}
-		case AdapterMultiFiles:
-			if err := SetLogger(AdapterMultiFiles); err != nil {
-				panic("init hlogger failed.")
+				panic("init hlogger failed." + err.Error())
 			}
 		default:
 			if err := SetLogger(AdapterConsole); err != nil {
-				fmt.Println(err)
-				panic("init hlogger failed.")
+				panic("init hlogger failed: " + err.Error())
 			}
 
 		}

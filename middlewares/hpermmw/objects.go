@@ -7,10 +7,10 @@ import (
 
 type Perm struct {
 	Disabled  bool
-	Service   string
+	Version   string
 	API       string
 	If        string
-	Constrain string
+	Condition string
 	APIsMap   map[string]bool `json:"-"`
 }
 

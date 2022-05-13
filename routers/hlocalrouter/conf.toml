@@ -1,5 +1,6 @@
-[LocalRouterConf]
-EID = ""
-Disabled = false
-
-
+[LocalRouter]
+Database = 0.0
+RedisPassword = ''
+RedisServer = 'localhost:6379'
+RpcxAddr = '127.0.0.1:3010'
+Domain = 'hguru'

@@ -11,8 +11,6 @@ type HType string
 
 type Any interface{}
 
-type Map map[string]interface{}
-
 //类型定义
 const (
 	HTypeBool          = "Bool"
@@ -56,7 +54,10 @@ func Validate(v interface{}, typ HType) error {
 	case HTypeObject:
 		_, ok := v.(map[string]interface{})
 		if !ok {
-			return fmt.Errorf("mismatched data type, Object expected, but got [%s]", GetKindName(reflect.ValueOf(v).Kind()))
+			_, ok = v.(Map)
+			if !ok {
+				return fmt.Errorf("mismatched data type, Object expected, but got [%s]", GetKindName(reflect.ValueOf(v).Kind()))
+			}
 		}
 		return nil
 	case HTypeBool:
@@ -148,7 +149,7 @@ func Validate(v interface{}, typ HType) error {
 		}
 		rng := v.([]interface{})
 		for _, b := range rng {
-			if IsNumber(b) {
+			if !IsNumber(b) {
 				return fmt.Errorf("mismatched data type, NumberArray expected, but got a [%s]", GetKindName(reflect.TypeOf(b).Kind()))
 			}
 		}
@@ -193,15 +194,32 @@ func Validate(v interface{}, typ HType) error {
 		}
 		return nil
 	case HTypeObjectArray:
-		if k := reflect.ValueOf(v).Kind(); k != reflect.Slice {
+		k := reflect.ValueOf(v).Kind()
+		if k != reflect.Slice {
 			return fmt.Errorf("mismatched data type, ObjectArray expected, but got [%s]", GetKindName(k))
 		}
-		for _, s := range v.([]interface{}) {
-			if k := reflect.ValueOf(s).Kind(); k != reflect.Map {
-				return fmt.Errorf("mismatched data type, ObjectArray expected, but got a [%s]", GetKindName(k))
+
+		oa1, ok := v.([]Any)
+		if ok {
+			for _, s := range oa1 {
+				if k := reflect.ValueOf(s).Kind(); k != reflect.Map {
+					return fmt.Errorf("mismatched data type, ObjectArray expected, but got a [%s]", GetKindName(k))
+				}
 			}
+			return nil
 		}
-		return nil
+
+		oa2, ok := v.([]interface{})
+		if ok {
+			for _, s := range oa2 {
+				if k := reflect.ValueOf(s).Kind(); k != reflect.Map {
+					return fmt.Errorf("mismatched data type, ObjectArray expected, but got a [%s]", GetKindName(k))
+				}
+			}
+			return nil
+		}
+
+		return fmt.Errorf("mismatched data type, ObjectArray expected, but got [%s]", GetKindName(k))
 	default:
 		return fmt.Errorf("invalid data type: [%s]", typ)
 	}
