@@ -1,0 +1,37 @@
+[
+  {
+    "name": "download",
+    "lang": "go",
+    "impl": "Download",
+    "params": [
+      {
+        "desc": "文件路径",
+        "name": "path",
+        "type": "String",
+        "required": true,
+        "validator": ""
+      },
+      {
+        "desc": "是否预览",
+        "name": "preview",
+        "type": "Bool",
+        "required": false,
+        "validator": ""
+      }
+    ]
+  },
+  {
+    "name": "upload",
+    "lang": "go",
+    "impl": "Upload",
+    "params": [
+      {
+        "desc": "文件内容",
+        "name": "files",
+        "type": "ObjectArray",
+        "required": true,
+        "validator": ""
+      }
+    ]
+  }
+]

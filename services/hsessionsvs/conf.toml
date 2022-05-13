@@ -1,0 +1,10 @@
+[SessionService]
+CheckAgent = false
+CheckIP = false
+CheckUser = false
+Disabled = false
+EID = '1f99acfd20b54aa69f8ee5a97f6e54dc'
+MagicToken = 'a1b2@c3d4'
+Name = 'session'
+SessionsPerUser = 1.0
+TokenExpire = 10080.0

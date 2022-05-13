@@ -1,0 +1,149 @@
+[
+  {
+    "name": "create",
+    "lang": "go",
+    "impl": "Create",
+    "params": [
+      {
+        "desc": "对象key",
+        "name": "key",
+        "type": "String",
+        "required": true,
+        "validator": ""
+      },
+      {
+        "desc": "对象数据",
+        "name": "object",
+        "type": "Object",
+        "required": true,
+        "validator": ""
+      }
+    ]
+  },
+  {
+    "name": "createM",
+    "lang": "go",
+    "impl": "CreateM",
+    "params": [
+      {
+        "desc": "对象key",
+        "name": "key",
+        "type": "String",
+        "required": true,
+        "validator": ""
+      },
+      {
+        "desc": "对象数据数组",
+        "name": "objects",
+        "type": "ObjectArray",
+        "required": true,
+        "validator": ""
+      }
+    ]
+  },
+  {
+    "name": "update",
+    "lang": "go",
+    "impl": "Update",
+    "params": [
+      {
+        "desc": "对象key",
+        "name": "key",
+        "type": "String",
+        "required": true,
+        "validator": ""
+      },
+      {
+        "desc": "对象字段值",
+        "name": "value",
+        "type": "Object",
+        "required": true,
+        "validator": ""
+      }
+    ]
+  },
+  {
+    "name": "updateM",
+    "lang": "go",
+    "impl": "UpdateM",
+    "params": [
+      {
+        "desc": "对象key",
+        "name": "key",
+        "type": "String",
+        "required": true,
+        "validator": ""
+      },
+      {
+        "desc": "对象数据数组",
+        "name": "values",
+        "type": "Object",
+        "required": true,
+        "validator": ""
+      }
+    ]
+  },
+  {
+    "name": "delete",
+    "lang": "go",
+    "impl": "Delete",
+    "params": [
+      {
+        "desc": "对象key",
+        "name": "key",
+        "type": "String",
+        "required": true,
+        "validator": ""
+      },
+      {
+        "desc": "对象ID数组",
+        "name": "ids",
+        "type": "NumberArray",
+        "required": true,
+        "validator": ""
+      }
+    ]
+  },
+  {
+    "name": "query",
+    "lang": "go",
+    "impl": "Query",
+    "params": [
+      {
+        "desc": "对象key",
+        "name": "key",
+        "type": "String",
+        "required": true,
+        "validator": ""
+      },
+      {
+        "desc": "条件过滤",
+        "name": "filters",
+        "type": "Object",
+        "required": true,
+        "validator": ""
+      },
+      {
+        "desc": "返回维度",
+        "name": "dims",
+        "type": "StringArray",
+        "required": false,
+        "validator": ""
+      },
+      {
+        "desc": "排序",
+        "name": "order_by",
+        "type": "StringArray",
+        "required": false,
+        "validator": ""
+      },
+      {
+        "desc": "分页",
+        "name": "paging",
+        "type": "NumberRange",
+        "required": false,
+        "validator": ""
+      }
+    ]
+  }
+]

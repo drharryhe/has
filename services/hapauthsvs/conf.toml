@@ -1,0 +1,18 @@
+[ApAuthService]
+Name = "ap"
+SessionService = "session"
+SessionCreateSlot = "createToken"
+SessionVerifySlot = "verifyToken"
+SessionRevokeSlot = "revokeToken"
+PwdEncoding = "base64"
+PwdSecret = ""
+PwdMinLen = 6
+PwdMaxLen = 8
+PwdPpperAndLowerLetter = true
+PwdNumberAndLetter = true
+PwdSymbol = true
+PwdSymbols = "{{base64:JF4mKigpPXx7fSc6IVtdXy0rfi48Pg==}}"
+DefaultPwd = "Qaz@2020"
+SuperName = "root"
+SuperPwd = "89c766f8cf1624a178f4c8cf599d978b"
+LockAfterFails = 5

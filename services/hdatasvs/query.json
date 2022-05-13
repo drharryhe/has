@@ -1,0 +1,19 @@
+{
+  "key": "student",
+  "filters": {
+    "OR": {
+      "conditions": [
+        "id > 0"
+      ],
+      "filters": [
+        {
+          "AND": {
+            "conditions": [
+              "name == harry"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

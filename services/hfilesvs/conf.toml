@@ -1,0 +1,5 @@
+[FileService]
+Name = "file"
+Hash = "sha256"
+Storage = "fs"
+MinioBucket = "default"
