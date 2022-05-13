@@ -1,0 +1,5 @@
+[MinioPlugin]
+Endpoint = "192.168.138.227:9000"
+AccessKeyID = "bby"
+SecretAccessKey = "BBY@2021!"
+Tls = false

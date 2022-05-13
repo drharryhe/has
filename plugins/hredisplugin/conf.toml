@@ -1,0 +1,4 @@
+[RedisPlugin]
+Backend = "localhost:6379"
+Password = ""
+DefaultDB = "bby"

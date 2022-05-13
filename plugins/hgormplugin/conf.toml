@@ -1,0 +1,11 @@
+[GormPlugin]
+DBServer = "127.0.0.1"
+DBPort = 3306
+DBType = "mysql"
+DBName = "demo"
+DBUser = "root"
+DBPwd = "123456"
+DBMaxOpenConns = 0
+DBMaxIdleConns = 0
+DBReset = true
+DBDataDir = "./data"

@@ -1,0 +1,3 @@
+[MemCachePlugin]
+ExpireDuration = 10
+CleanupDuration = 10
