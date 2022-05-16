@@ -4,6 +4,11 @@
 
 框架核心
 
+## 拉取项目
+```shell
+git clone https://github.com/drharryhe/has.git
+```
+
 ## 设计原则
 
 * 保持简单，第一原则
