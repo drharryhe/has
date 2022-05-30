@@ -31,12 +31,12 @@ type IServer interface {
 	Slot(service string, slot string) *Slot
 	Assets() IAssetManager
 
-	RegisterService(service IService, args ...htypes.Any)
+	RegisterService(service IService, options htypes.Any)
 	RequestService(service string, slot string, params htypes.Map) (htypes.Any, *herrors.Error)
 }
 
 type IService interface {
-	Open(s IServer, instance IService, args ...htypes.Any) *herrors.Error
+	Open(s IServer, instance IService, options htypes.Any) *herrors.Error
 	Close()
 	Name() string
 
@@ -45,7 +45,6 @@ type IService interface {
 
 	//槽相关方法
 	Slot(slot string) *Slot
-	SlotNames() []string
 
 	//服务调用相关方法
 	Request(slot string, params htypes.Map) (htypes.Any, *herrors.Error)

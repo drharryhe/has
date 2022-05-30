@@ -22,7 +22,7 @@ const (
 
 func New(funcWrapper IPermFuncWrapper) *Middleware {
 	if funcWrapper == nil {
-		panic("permFunction is nill")
+		panic("permFunction is null")
 	}
 
 	mw := new(Middleware)
@@ -83,10 +83,7 @@ func (this *Middleware) Config() core.IEntityConf {
 func (this *Middleware) EntityStub() *core.EntityStub {
 	return core.NewEntityStub(
 		&core.EntityStubOptions{
-			Owner:       this,
-			Ping:        nil,
-			GetLoad:     nil,
-			ResetConfig: nil,
+			Owner: this,
 		})
 }
 

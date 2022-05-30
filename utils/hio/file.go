@@ -59,7 +59,7 @@ func IteratorFiles(dir string, ext string) []string {
 		if info.IsDir() {
 			return nil
 		}
-		if ext == "*" {
+		if ext == ".*" {
 			paths = append(paths, p)
 		} else {
 			e := path.Ext(info.Name())

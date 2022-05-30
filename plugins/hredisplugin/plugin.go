@@ -3,10 +3,11 @@ package hredisplugin
 ///redis 访问plugin
 
 import (
+	"github.com/go-redis/redis/v8"
+
 	"github.com/drharryhe/has/common/herrors"
 	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/core"
-	"github.com/go-redis/redis/v8"
 )
 
 var plugin = &Plugin{}
@@ -53,9 +54,6 @@ func (this *Plugin) Config() core.IEntityConf {
 func (this *Plugin) EntityStub() *core.EntityStub {
 	return core.NewEntityStub(
 		&core.EntityStubOptions{
-			Owner:       this,
-			Ping:        nil,
-			GetLoad:     nil,
-			ResetConfig: nil,
+			Owner: this,
 		})
 }

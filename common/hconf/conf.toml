@@ -1,0 +1,27 @@
+[DatabasePlugin]
+EID = '123456'
+[[DatabasePlugin.Connection]]
+InitData = false
+InitDataAfterSecond = 30
+InitDataDir = './data'
+Key = 'mysql'
+MaxIdleConns = 0
+MaxOpenConns = 0
+Name = 'demo'
+Port = 3306
+Pwd = '123456'
+ReadTimeout = 10
+Reset = true
+Server = '127.0.0.1'
+Type = 'mysql'
+User = 'root'
+WriteTimeout = 10
+
+
+[TestConf]
+Age = 46
+ID = 1
+Man = true
+Mark = 99.5
+Name = '250'
+

@@ -44,6 +44,7 @@ func (this *Error) New(format string, v ...interface{}) *Error {
 		Code:  this.Code,
 		Cause: fmt.Sprintf(format, v...),
 	}
+	err.Desc = err.Cause
 
 	if hconf.IsDebug() {
 		err.log()

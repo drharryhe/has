@@ -7,7 +7,7 @@ type SessionMiddleware struct {
 
 	SessionService  string
 	VerifySlot      string
-	WhiteList       []string
+	APIWhiteList    []string
 	InUserField     string
 	InTokenField    string
 	InAgentField    string

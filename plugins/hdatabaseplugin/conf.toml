@@ -1,0 +1,16 @@
+[DatabasePlugin]
+[[DatabasePlugin.Connection]]
+Key = 'mysql'
+Server = "127.0.0.1"
+Port = 3306
+Type = "mysql"
+Name = "demo"
+User = "root"
+Pwd = "123456"
+MaxOpenConns = 0
+MaxIdleConns = 0
+Reset = true
+InitDataDir = "./data"
+InitDataAfterSecond = 30
+ReadTimeout = 10
+WriteTimeout = 10

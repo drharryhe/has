@@ -1,12 +1,15 @@
 package hconf
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"strings"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/pelletier/go-toml/v2"
 
+	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/utils/hio"
 	"github.com/drharryhe/has/utils/hruntime"
 )
@@ -43,13 +46,13 @@ func IsDebug() bool {
 }
 
 func Init() {
-	bytes, err := hio.ReadFile(confFile)
+	bs, err := hio.ReadFile(confFile)
 	if err != nil {
 		panic("failed to read config file \r\n" + err.Error())
 	}
 
 	config.configures = make(map[string]interface{})
-	err = toml.Unmarshal(bytes, &config.configures)
+	err = toml.Unmarshal(bs, &config.configures)
 	if err != nil {
 		panic("failed to parse config file. \r\n" + err.Error())
 	}
@@ -73,9 +76,8 @@ func Load(conf interface{}) {
 		panic(fmt.Sprintf("failed to load conf, config section [%s] not found", name))
 	}
 
-	bs, _ := jsoniter.Marshal(c)
-
-	err := jsoniter.Unmarshal(bs, conf)
+	bs, _ := toml.Marshal(c)
+	err := toml.Unmarshal(bs, conf)
 	if err != nil {
 		panic(fmt.Sprintf("failed to parse config section [%s]", name))
 	}
@@ -84,17 +86,58 @@ func Load(conf interface{}) {
 }
 
 func Save() {
-	tmp := make(map[string]interface{})
+	//利用JSON去掉多层结构
 	bs, _ := jsoniter.Marshal(config.configures)
-	_ = jsoniter.Unmarshal(bs, &tmp)
+	tmp := make(htypes.Map)
+	decoder := jsoniter.NewDecoder(strings.NewReader(string(bs)))
+	decoder.UseNumber()
+	_ = decoder.Decode(&tmp)
+	handleNumberInMap(tmp)
 
-	bs, err := toml.Marshal(tmp)
-	if err != nil {
-		panic("failed to save configures, unable to marshal conf")
-	}
-
-	err = ioutil.WriteFile(confFile, bs, 0x666)
+	//保存到文件
+	bs, _ = toml.Marshal(tmp)
+	err := ioutil.WriteFile(confFile, bs, 0x666)
 	if err != nil {
 		panic("failed to save configures,failed to write config file")
+	}
+}
+
+func handleNumberInMap(m map[string]interface{}) {
+	for k, v := range m {
+		switch v.(type) {
+		case map[string]interface{}:
+			handleNumberInMap(v.(map[string]interface{}))
+		case []interface{}:
+			handleNumberInSlice(v.([]interface{}))
+		case json.Number:
+			if num, err := v.(json.Number).Int64(); err == nil {
+				m[k] = num
+				continue
+			}
+			if num, err := v.(json.Number).Float64(); err == nil {
+				m[k] = num
+				continue
+			}
+		}
+	}
+}
+
+func handleNumberInSlice(m []interface{}) {
+	for i, v := range m {
+		switch v.(type) {
+		case json.Number:
+			if num, err := v.(json.Number).Int64(); err == nil {
+				m[i] = num
+				continue
+			}
+			if num, err := v.(json.Number).Float64(); err == nil {
+				m[i] = num
+				continue
+			}
+		case map[string]interface{}:
+			handleNumberInMap(m[i].(map[string]interface{}))
+		case []interface{}:
+			handleNumberInSlice(m[i].([]interface{}))
+		}
 	}
 }

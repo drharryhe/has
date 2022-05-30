@@ -55,8 +55,10 @@ func (this *Connector) Open(gw core.IAPIGateway, ins core.IAPIConnector) *herror
 	})
 
 	this.App.Use(cors.New())
-	this.App.Get("/error/query/:fingerprint", this.handleErrFingerprint)
-	this.App.Get("/error/statics", this.handleErrStatics)
+	if hconf.IsDebug() {
+		this.App.Get("/error/query/:fingerprint", this.handleErrFingerprint)
+		this.App.Get("/error/statics", this.handleErrStatics)
+	}
 	this.App.Get("/:version/:api", this.handleServiceAPI)
 	this.App.Post("/:version/:api", this.handleServiceAPI)
 
@@ -287,10 +289,7 @@ func (this *Connector) ParseQueryParams(c *fiber.Ctx) (htypes.Map, *herrors.Erro
 func (this *Connector) EntityStub() *core.EntityStub {
 	return core.NewEntityStub(
 		&core.EntityStubOptions{
-			Owner:       this,
-			Ping:        nil,
-			GetLoad:     nil,
-			ResetConfig: nil,
+			Owner: this,
 		})
 }
 

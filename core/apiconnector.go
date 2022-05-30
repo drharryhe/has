@@ -3,6 +3,7 @@ package core
 import (
 	"github.com/drharryhe/has/common/hconf"
 	"github.com/drharryhe/has/common/herrors"
+	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/utils/hrandom"
 	"github.com/drharryhe/has/utils/hruntime"
 )
@@ -41,14 +42,14 @@ func (this *BaseConnector) Open(gw IAPIGateway, ins IAPIConnector) *herrors.Erro
 
 	hconf.Load(ins.(IEntity).Config())
 
-	if val, err := ins.(IEntity).EntityStub().GetConfigItem("Packer"); err != nil {
+	if val, err := ins.(IEntity).EntityStub().Manage(ManageGetConfigItems, htypes.Map{"Packer": nil}); err != nil {
 		return err
 	} else {
-		packer, _ := val.(string)
+		packer, _ := val.(htypes.Map)["Packer"].(string)
 		if packer == "" {
-			return herrors.ErrSysInternal.New("connector %s 's packer not configured or invalid type", this.class)
+			return herrors.ErrSysInternal.New("[%s]'s [Packer] not configured or invalid type", this.class)
 		}
-		this.Packer = this.Gateway.Packer(val.(string))
+		this.Packer = this.Gateway.Packer(packer)
 		if this.Packer == nil {
 			return herrors.ErrSysInternal.New("packer [" + packer + "] not found")
 		}

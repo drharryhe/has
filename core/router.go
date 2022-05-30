@@ -103,10 +103,7 @@ func (this *BaseRouter) ManageEntity(mm *EntityMeta, slot string, params htypes.
 		return nil, herrors.ErrSysInternal.New("Entity entity [" + mm.EID + "] not found")
 	}
 
-	var res SlotResponse
-	m.EntityStub().Manage(slot, params, &res)
-
-	return res.Data, res.Error
+	return m.EntityStub().Manage(slot, params)
 }
 
 /**

@@ -29,11 +29,11 @@ func (this *Router) RequestService(service string, slot string, params htypes.Ma
 	s := this.Services[service]
 
 	if s == nil || s.(core.IEntity).Config().GetDisabled() {
-		return nil, herrors.ErrCallerInvalidRequest.New("service %s not available", service)
+		return nil, herrors.ErrCallerInvalidRequest.New("service [%s] not available", service)
 	}
 
-	if s.Slot(slot) == nil || s.Slot(slot).Disabled {
-		return nil, herrors.ErrCallerInvalidRequest.New("slot %s not available", slot)
+	if s.Slot(slot) == nil {
+		return nil, herrors.ErrCallerInvalidRequest.New("slot [%s] not available", slot)
 	}
 
 	return s.Request(slot, params)
@@ -42,10 +42,7 @@ func (this *Router) RequestService(service string, slot string, params htypes.Ma
 func (this *Router) EntityStub() *core.EntityStub {
 	return core.NewEntityStub(
 		&core.EntityStubOptions{
-			Owner:       this,
-			Ping:        nil,
-			GetLoad:     nil,
-			ResetConfig: nil,
+			Owner: this,
 		})
 }
 

@@ -5,6 +5,7 @@ import "github.com/drharryhe/has/core"
 type SessionService struct {
 	core.ServiceConf
 
+	DatabaseKey     string
 	TokenExpire     int
 	SessionsPerUser int
 	CheckIP         bool

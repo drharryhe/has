@@ -1,7 +1,11 @@
 package hapauthsvs
 
+import "gorm.io/gorm"
+
 //账密登录用户表
 type SvsApAuthUser struct {
+	gorm.Model
+
 	ID        int64  `json:"id"`
 	User      string `json:"user" gorm:"size:50;unique;index:user_idx"` //用户名，即账号
 	Password  string `json:"-" gorm:"size:32"`                          //用户密码

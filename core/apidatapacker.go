@@ -59,10 +59,7 @@ func (this *BasePacker) EntityMeta() *EntityMeta {
 func (this *BasePacker) EntityStub() *EntityStub {
 	return NewEntityStub(
 		&EntityStubOptions{
-			Owner:       this.instance.(IEntity),
-			Ping:        nil,
-			GetLoad:     nil,
-			ResetConfig: nil,
+			Owner: this.instance.(IEntity),
 		})
 }
 

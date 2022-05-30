@@ -1,6 +1,6 @@
 /**********************************
 	Service 关系数据管理服务
-	为了保证Service可以对所有注册到GormPlugin的对象进行管理，Service需要在其他服务注册之后，最后进行注册
+	为了保证Service可以对所有注册到DatabasePlugin的对象进行管理，Service需要在其他服务注册之后，最后进行注册
  **********************************/
 
 package hdatasvs
@@ -11,14 +11,13 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/jinzhu/gorm"
-	jsoniter "github.com/json-iterator/go"
+	"gorm.io/gorm"
 
 	"github.com/drharryhe/has/common/hconf"
 	"github.com/drharryhe/has/common/herrors"
 	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/core"
-	"github.com/drharryhe/has/plugins/hgormplugin"
+	"github.com/drharryhe/has/plugins/hdatabaseplugin"
 	"github.com/drharryhe/has/utils/hconverter"
 	"github.com/drharryhe/has/utils/hdatetime"
 	"github.com/drharryhe/has/utils/hruntime"
@@ -27,23 +26,29 @@ import (
 const (
 	opCreate = "create"
 	opUpdate = "update"
-	opDelete = "del"
+	opDelete = "delete"
 	opQuery  = "query"
 )
 
 type FieldFunc func(param interface{}) (interface{}, *herrors.Error)
+
 type FieldFuncMap map[string]FieldFunc
 
 type Service struct {
 	core.Service
 
-	conf DataService
-
-	db                      *gorm.DB
-	objectsWithKey          map[string]*object
-	objectsWithName         map[string]*object
+	conf                    DataService
+	dbPlugin                *hdatabaseplugin.Plugin
+	defaultDB               *gorm.DB
+	dbs                     map[string]*gorm.DB
 	instancesWithName       map[string]interface{}
+	objectsByKey            map[string]*object
+	objectsByName           map[string]*object
+	viewsWithKey            map[string]*view
+	viewsWithName           map[string]*view
 	tableNamesOfObj         map[string]string
+	fieldFuncMap            map[string]FieldFunc
+	tablesOfDatabases       map[string]map[string]bool
 	afterUpdateHookCallers  map[string]*core.MethodCaller
 	afterUpdateHookNames    map[string]string
 	beforeUpdateHookCallers map[string]*core.MethodCaller
@@ -60,28 +65,25 @@ type Service struct {
 	afterDelHookNames       map[string]string
 	beforeDelHookCallers    map[string]*core.MethodCaller
 	beforeDelHookNames      map[string]string
-	fieldFuncMap            map[string]FieldFunc
 }
 
-func (this *Service) Open(s core.IServer, instance core.IService, args ...htypes.Any) *herrors.Error {
-	err := this.Service.Open(s, instance, args)
+func (this *Service) Open(s core.IServer, instance core.IService, options htypes.Any) *herrors.Error {
+	err := this.Service.Open(s, instance, options)
 	if err != nil {
 		return err
 	}
 
-	plugin := this.UsePlugin("GormPlugin").(*hgormplugin.Plugin)
-	this.db = plugin.Capability().(*gorm.DB)
-	objs := plugin.Objects()
+	plugin := this.UsePlugin("DatabasePlugin").(*hdatabaseplugin.Plugin)
+	this.defaultDB = plugin.DefaultDB()
+	this.dbs = plugin.Capability().(map[string]*gorm.DB)
 
 	this.instancesWithName = make(map[string]interface{})
 	this.tableNamesOfObj = make(map[string]string)
-	for _, o := range objs {
-		n := hruntime.GetObjectName(o)
-		this.instancesWithName[n] = o
-		this.tableNamesOfObj[n] = gorm.ToTableName(n)
-	}
-	this.objectsWithKey = make(map[string]*object)
-	this.objectsWithName = make(map[string]*object)
+	this.objectsByKey = make(map[string]*object)
+	this.objectsByName = make(map[string]*object)
+	this.viewsWithKey = make(map[string]*view)
+	this.viewsWithName = make(map[string]*view)
+	this.tablesOfDatabases = make(map[string]map[string]bool)
 
 	this.beforeCreateHookNames = make(map[string]string)
 	this.afterCreateHookNames = make(map[string]string)
@@ -91,22 +93,48 @@ func (this *Service) Open(s core.IServer, instance core.IService, args ...htypes
 	this.afterQueryHookNames = make(map[string]string)
 	this.beforeDelHookNames = make(map[string]string)
 	this.afterDelHookNames = make(map[string]string)
-	for _, o := range objs {
-		obj := this.parseObject(o)
-		if obj != nil {
-			this.objectsWithKey[obj.key] = obj
-			this.objectsWithName[hruntime.GetObjectName(o)] = obj
-		}
-	}
 
-	if len(args) > 0 {
-		go this.mountHookCallers(args[0])
-	}
-	this.fieldFuncMap = make(map[string]FieldFunc)
-	if len(args) > 1 {
-		fm, ok := args[1].(map[string]FieldFunc)
-		if ok {
-			this.fieldFuncMap = fm
+	if options != nil {
+		ops := options.(*Options)
+		if ops.Hooks != nil {
+			this.mountHookCallers(ops.Hooks)
+		}
+
+		if ops.FieldFuncMap != nil {
+			this.fieldFuncMap = ops.FieldFuncMap
+		}
+
+		if ops.Objects != nil {
+			for i, o := range ops.Objects {
+				n := hruntime.GetObjectName(o)
+				this.instancesWithName[n] = ops.Objects[i]
+
+				obj, herr := this.parseObject(n, o)
+				if herr != nil {
+					return herr
+				}
+				if obj == nil {
+					continue
+				}
+
+				this.objectsByKey[obj.key] = obj
+				this.objectsByName[n] = obj
+
+				if err := this.getDB(obj.database).AutoMigrate(o); err != nil {
+					return herrors.ErrSysInternal.New(err.Error())
+				}
+			}
+		}
+
+		if ops.Views != nil {
+			for _, v := range ops.Views {
+				view, he := this.parseView(v)
+				if he != nil {
+					return he
+				}
+				this.viewsWithKey[view.key] = view
+				this.viewsWithName[view.name] = view
+			}
 		}
 	}
 	return nil
@@ -115,10 +143,7 @@ func (this *Service) Open(s core.IServer, instance core.IService, args ...htypes
 func (this *Service) EntityStub() *core.EntityStub {
 	return core.NewEntityStub(
 		&core.EntityStubOptions{
-			Owner:       this,
-			Ping:        nil,
-			GetLoad:     nil,
-			ResetConfig: nil,
+			Owner: this,
 		})
 }
 
@@ -126,558 +151,56 @@ func (this *Service) Config() core.IEntityConf {
 	return &this.conf
 }
 
-func (this *Service) CreateM(ps htypes.Map, res *core.SlotResponse) {
-	key := ps["key"].(string)
-	o := this.objectsWithKey[key]
-	if o == nil {
-		this.Response(res, nil, herrors.ErrSysInternal.New("key [%s]not found:", key).D("failed to create data"))
-		return
-	}
-
-	vs := make(map[string]interface{})
-	vs["key"] = key
-	var ids []interface{}
-	for _, vals := range ps["objects"].([]interface{}) {
-		vs["object"] = vals
-		this.Create(vs, res)
-		if res.Error == nil {
-			ids = append(ids, res.Data)
-		} else {
-			this.Response(res, nil, res.Error)
-			return
-		}
-	}
-
-	this.Response(res, ids, nil)
-}
-
-func (this *Service) Create(ps htypes.Map, res *core.SlotResponse) {
-	key := ps["key"].(string)
-	o := this.objectsWithKey[key]
-	if o == nil {
-		this.Response(res, nil, herrors.ErrSysInternal.New("key [%s] not found", key).D("failed to create data"))
-		return
-	}
-	if o.deniedOperations[opCreate] {
-		this.Response(res, nil, herrors.ErrUserUnauthorizedAct.New("object [%s] cannot be created", key).D("failed to create data"))
-		return
-	}
-
-	vals := ps["object"].(map[string]interface{})
-	if vals["id"] != nil {
-		this.Response(res, nil, herrors.ErrCallerInvalidRequest.New("object parameter [id] is forbidden in create()", key).D("failed to create data"))
-		return
-	}
-
-	for k := range vals {
-		f := o.fieldMap[k]
-		if f != nil {
-			if f.opDenies[opCreate] {
-				this.Response(res, nil, herrors.ErrUserUnauthorizedAct.New("field [%s] of object [%s] cannot be created", k, key).D("failed to create data"))
-				return
-			}
-		}
-	}
-
-	vs, err := this.shapeObjectFieldValues(opCreate, o.name, vals)
-	if err != nil {
-		this.Response(res, nil, err)
-		return
-	}
-
-	if hook := this.beforeCreateHookNames[key]; hook != "" {
-		reply := core.CallerResponse{}
-		stop := false
-		this.callBeforeCreateHook(hook, vs, &reply, &stop)
-		if reply.Error != nil {
-			this.Response(res, nil, reply.Error)
-			return
-		}
-		if stop {
-			this.Response(res, reply.Data, reply.Error)
-			return
-		}
-	}
-
-	ins, err := this.createObject(o.instance, vs)
-	if err != nil {
-		this.Response(res, nil, err)
-		return
-	}
-	if vs["ID"] == nil {
-		vs["ID"] = this.getObjectFieldValue(ins, "ID")
-	}
-
-	if hook := this.afterCreateHookNames[key]; hook != "" {
-		reply := core.CallerResponse{}
-		this.callAfterCreateHook(hook, vs, &reply)
-		this.Response(res, reply.Data, reply.Error)
-	} else {
-		this.Response(res, vs["ID"], nil)
-	}
-}
-
-func (this *Service) delRelations(tab string, relatedField string, val interface{}) *herrors.Error {
-	err := this.db.Table(tab).Where(fmt.Sprintf("%s = ?", gorm.ToColumnName(relatedField)), val).Delete(nil).Error
-	if err != nil {
-		return herrors.ErrSysInternal.New(err.Error())
-	}
-	return nil
-}
-
-func (this *Service) createObject(o interface{}, vals map[string]interface{}) (interface{}, *herrors.Error) {
-	ins := hruntime.CloneObject(o)
-	err := hruntime.SetObjectValues(ins, vals)
-	if err != nil {
-		return nil, herrors.ErrSysInternal.New(err.Error())
-	}
-	err = this.db.Save(ins).Error
-	if err != nil {
-		if strings.Index(err.Error(), "Error 1062") >= 0 {
-			return nil, herrors.ErrCallerInvalidRequest.New("object duplicated")
-		}
-		return nil, herrors.ErrSysInternal.New(err.Error())
-	}
-
-	return ins, nil
-}
-
-func (this *Service) Update(ps htypes.Map, res *core.SlotResponse) {
-	key := ps["key"].(string)
-	o := this.objectsWithKey[key]
-	if o == nil {
-		this.Response(res, nil, herrors.ErrCallerInvalidRequest.New("key %s not found", key))
-		return
-	}
-	if o.deniedOperations[opUpdate] {
-		this.Response(res, nil, herrors.ErrCallerUnauthorizedAccess.New("object %s cannot be updated", key))
-		return
-	}
-
-	vals := ps["value"].(map[string]interface{})
-	if vals["id"] == nil {
-		this.Response(res, nil, herrors.ErrSysInternal.New("parameter id required"))
-		return
-	}
-	for k := range vals {
-		f := o.fieldMap[k]
-		if f != nil {
-			if f.opDenies[opUpdate] {
-				this.Response(res, nil, herrors.ErrCallerUnauthorizedAccess.New("field %s of object %s cannot be updated", k, key))
-				return
-			}
-		}
-	}
-
-	vs, err := this.shapeObjectFieldValues(opUpdate, o.name, vals)
-	if err != nil {
-		this.Response(res, nil, err)
-		return
-	}
-
-	if hook := this.beforeUpdateHookNames[key]; hook != "" {
-		reply := core.CallerResponse{}
-		stop := false
-		this.callBeforeUpdateHook(hook, int64(vals["id"].(float64)), vs, &reply, &stop)
-		if reply.Error != nil {
-			this.Response(res, nil, reply.Error)
-			return
-		}
-		if stop {
-			this.Response(res, reply.Data, reply.Error)
-			return
-		}
-	}
-
-	//获取老对象
-	ins := hruntime.CloneObject(o.instance)
-	if err := this.db.Where("id = ?", vals["id"]).First(ins).Error; err != nil {
-		this.Response(res, nil, herrors.ErrCallerInvalidRequest.New(err.Error()).D("object not found"))
-		return
-	}
-
-	if err := this.db.Model(ins).Updates(vs).Error; err != nil {
-		this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
-		return
-	}
-
-	if hook := this.afterUpdateHookNames[key]; hook != "" {
-		reply := core.CallerResponse{}
-		this.callAfterUpdateHook(hook, int64(vs["ID"].(float64)), vs, &reply)
-		this.Response(res, reply.Data, reply.Error)
-	} else {
-		this.Response(res, nil, nil)
-	}
-}
-
-func (this *Service) UpdateM(ps htypes.Map, res *core.SlotResponse) {
-	key := ps["key"].(string)
-	o := this.objectsWithKey[key]
-	if o == nil {
-		this.Response(res, nil, herrors.ErrSysInternal.New("key [%s] not found:", key))
-		return
-	}
-
-	vs := make(map[string]interface{})
-	vs["key"] = key
-	for _, vals := range ps["values"].([]interface{}) {
-		vs["values"] = vals
-		this.Update(vs, res)
-		if res.Error.Code != herrors.ECodeOK {
-			return
-		}
-	}
-}
-
-func (this *Service) Delete(ps htypes.Map, res *core.SlotResponse) {
-	key := ps["key"].(string)
-	o := this.objectsWithKey[key]
-	if o == nil {
-		this.Response(res, nil, herrors.ErrSysInternal.New("key [%s] not found:", key))
-		return
-	}
-	if o.deniedOperations[opDelete] {
-		this.Response(res, nil, herrors.ErrCallerUnauthorizedAccess.New("object %s cannot be deleted", key))
-		return
-	}
-	vs := make(map[string]interface{})
-	vs["key"] = key
-
-	var ids []int64
-	for _, id := range ps["ids"].([]interface{}) {
-		ids = append(ids, int64(id.(float64)))
-	}
-
-	if hook := this.beforeDelHookNames[key]; hook != "" {
-		reply := core.CallerResponse{}
-		stop := false
-		this.callBeforeDelHook(hook, ids, &reply, &stop)
-		if reply.Error != nil {
-			this.Response(res, nil, reply.Error)
-			return
-		}
-		if stop {
-			this.Response(res, reply.Data, reply.Error)
-			return
-		}
-	}
-
-	for _, id := range ids {
-		ins := hruntime.CloneObject(o.instance)
-		if err := this.db.Where("id = ?", id).First(ins).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				continue
-			}
-			this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
-			return
-		}
-		_ = this.db.Delete(ins).Error
-	}
-
-	if hook := this.afterDelHookNames[key]; hook != "" {
-		reply := core.CallerResponse{}
-		this.callAfterDelHook(hook, ids, &reply)
-		this.Response(res, reply.Data, reply.Error)
-	} else {
-		this.Response(res, nil, nil)
-	}
-}
-
-func (this *Service) Query(ps htypes.Map, res *core.SlotResponse) {
-	key := ps["key"].(string)
-	o := this.objectsWithKey[key]
-	if o == nil {
-		this.Response(res, nil, herrors.ErrSysInternal.New("key [%s] not found", key))
-		return
-	}
-	if o.deniedOperations[opQuery] {
-		this.Response(res, nil, herrors.ErrCallerUnauthorizedAccess.New("object %s cannot be queried", key))
-		return
-	}
-
-	//处理where 子句
-	var rawFilters RawFilters
-	bs, _ := jsoniter.Marshal(ps["filters"])
-	_ = jsoniter.Unmarshal(bs, &rawFilters)
-	filters, err := this.ParserRawFilters(o, &rawFilters)
-	if err != nil {
-		this.Response(res, nil, err)
-		return
-	}
-	var where string
-	var vals []interface{}
-	if filters != nil {
-		where, vals, err = this.BuildWhereClause(filters)
-		if err != nil {
-			this.Response(res, nil, err)
-			return
-		}
-	}
-
-	//处理select 子句
-	var dims []string
-	var selectFieldNames []string
-	dimMap := make(map[string]bool)
-
-	for _, d := range ps["dims"].([]interface{}) {
-		f := o.fieldMap[d.(string)]
-		if f == nil {
-			continue
-		}
-		if f.opDenies[opQuery] {
-			this.Response(res, nil, herrors.ErrCallerUnauthorizedAccess.New("field %s of object %s cannot be queried", key, f.key))
-			return
-		}
-
-		if f.kind == reflect.Map || f.kind == reflect.Ptr {
-			continue
-		}
-
-		if f.kind == reflect.Slice || f.kind == reflect.Struct {
-			//associations = append(associations, f)
-			continue
-		} else {
-			c := gorm.ToColumnName(f.name)
-			dimMap[c] = true
-			dims = append(dims, c)
-			selectFieldNames = append(selectFieldNames, fmt.Sprintf("`%s`", c))
-		}
-	}
-
-	if len(dims) == 0 {
-		this.Response(res, nil, herrors.ErrCallerInvalidRequest.New("parameter [dims] not found"))
-		return
-	}
-
-	//处理order子句
-	var orderBys []string
-	if ps["order_by"] != nil {
-		var order orderBy
-		for _, s := range ps["order_by"].([]interface{}) {
-			ss := strings.Split(s.(string), ",")
-			if len(ss) != 2 {
-				this.Response(res, nil, herrors.ErrCallerInvalidRequest.New("invalid parameter order_by [%s]", s))
-				continue
-			}
-			f := o.fieldMap[strings.Trim(ss[0], " ")]
-			if f == nil {
-				continue
-			}
-			order.column = gorm.ToColumnName(f.name)
-			if len(ss) == 1 || strings.ToUpper(strings.Trim(ss[1], " ")) == "ASC" {
-				order.direction = "ASC"
-			} else {
-				order.direction = "DESC"
-			}
-			orderBys = append(orderBys, fmt.Sprintf("%s %s", order.column, order.direction))
-		}
-	}
-
-	//处理limit 子句
-	limit := limit{}
-	computeTotal := false
-	if ps["paging"] != nil {
-		paging := ps["paging"].([]interface{})
-		if len(paging) == 2 {
-			computeTotal = true
-			limit.offset = int((paging[0].(float64) - 1) * paging[1].(float64))
-			limit.count = int(paging[1].(float64))
-		}
-	}
-
-	var group groupBy
-	if ps["group"] != nil {
-		gs := ps["group"].([]interface{})
-		f := o.fieldMap[gs[0].(string)]
-		if f != nil {
-			group.column = gorm.ToColumnName(f.name)
-			if len(gs) > 1 {
-				ss, err := this.parseCondition(gs[1].(string))
-				if err != nil {
-					this.Response(res, nil, err)
-					return
-				}
-				group.having, err = this.convCondition2Filter(o, ss)
-				if err != nil {
-					this.Response(res, nil, err)
-					return
-				}
-			}
-		}
-	}
-
-	if hook := this.beforeQueryHookNames[key]; hook != "" {
-		reply := core.CallerResponse{}
-		stop := false
-		this.callBeforeQueryHook(hook, ps, &reply, &stop)
-		if reply.Error != nil {
-			this.Response(res, nil, reply.Error)
-			return
-		}
-		if stop {
-			this.Response(res, reply.Data, reply.Error)
-			return
-		}
-	}
-
-	//查询数据
-	var data []interface{}
-	scope := this.db.Model(o.instance)
-
-	if strings.Trim(strings.Trim(where, ")"), "(") != "" {
-		scope = scope.Where(where, vals...)
-	}
-	scope = scope.Select(selectFieldNames)
-	if group.column != "" {
-		scope = scope.Group(group.column)
-	}
-	if group.having != nil {
-		scope = scope.Having(fmt.Sprintf("%s %s ?", gorm.ToColumnName(group.having.field.name), group.having.compare), group.having.value)
-	}
-	if len(orderBys) > 0 {
-		scope = scope.Order(strings.Join(orderBys, ","))
-	}
-
-	if limit.count > 0 {
-		scope = scope.Limit(limit.count).Offset(limit.offset)
-	}
-	if rows, err := scope.Rows(); err != nil {
-		this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
-		return
-	} else {
-		defer rows.Close()
-		for rows.Next() {
-			vals := this.buildDimValues(o, dims)
-			err = rows.Scan(vals...)
-			if err != nil {
-				this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
-				return
-			}
-			data = append(data, this.bindDimValues(o, dims, vals))
-		}
-	}
-
-	if hook := this.afterQueryHookNames[key]; hook != "" {
-		var err error
-		reply := core.CallerResponse{}
-		this.callAfterQueryHook(hook, ps, data, &reply)
-		if computeTotal {
-			scope := this.db.Model(o.instance)
-			var total int
-			if where != "" {
-				err = scope.Where(where, vals...).Count(&total).Error
-			} else {
-				err = scope.Count(&total).Error
-			}
-			if err != nil {
-				this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
-				return
-			} else {
-				resData := map[string]interface{}{
-					"total": total,
-					"data":  reply.Data,
-				}
-				this.Response(res, resData, reply.Error)
-			}
-		} else {
-			this.Response(res, data, nil)
-		}
-	} else {
-		var err error
-		if computeTotal {
-			scope := this.db.Model(o.instance)
-			var total int
-			if where != "" && where != "()" {
-				err = scope.Where(where, vals...).Count(&total).Error
-			} else {
-				err = scope.Count(&total).Error
-			}
-			if err != nil {
-				this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
-				return
-			} else {
-				resData := map[string]interface{}{
-					"total": total,
-				}
-				if data == nil || reflect.ValueOf(data).IsNil() {
-					resData["data"] = []interface{}{}
-				} else {
-					resData["data"] = data
-				}
-				this.Response(res, resData, nil)
-			}
-		} else {
-			this.Response(res, data, nil)
-		}
-	}
-}
-
-func (this *Service) BuildWhereClause(fs *Filters) (string, []interface{}, *herrors.Error) {
+func (this *Service) buildWhereClause(fs *filter) (string, []interface{}, *herrors.Error) {
 	logic := "AND"
 	var (
 		where string
 		vals  []interface{}
 		w     string
 		v     interface{}
-		ss    []string
-		ns    []float64
-		ok    bool
 	)
 
-	for i, f := range fs.atomFilters {
-		if f.field.kind == reflect.Slice || f.field.kind == reflect.Map || f.field.kind == reflect.Struct || f.field.kind == reflect.Ptr {
+	for i, f := range fs.conditions {
+		if f.field.Kind() == reflect.Slice || f.field.Kind() == reflect.Map || f.field.Kind() == reflect.Struct || f.field.Kind() == reflect.Ptr {
 			continue
 		}
 		com := strings.ToUpper(f.compare)
 		switch com {
-		case "BETWEEN", "NOT BETWEEN":
-			w = fmt.Sprintf("`%s` BETWEEN ? AND ?", gorm.ToColumnName(f.field.name))
-			if f.field.kind == reflect.String {
-				ss, ok = hconverter.String2StringArray(f.value.(string))
-				if !ok {
-					return "", nil, herrors.ErrCallerInvalidRequest.New("invalid query condition %s", f.value.(string))
-				}
-				for _, t := range ss {
-					vals = append(vals, t)
-				}
-
+		case "BETWEEN", "!BETWEEN":
+			if com == "BETWEEN" {
+				w = fmt.Sprintf("%s BETWEEN ? AND ?", f.field.Column())
 			} else {
-				ns, ok = hconverter.String2NumberArray(f.value.(string))
-				if !ok {
-					return "", nil, herrors.ErrCallerInvalidRequest.New("invalid query condition %s", f.value.(string))
+				w = fmt.Sprintf("%s NOT BETWEEN ? AND ?", f.field.Column())
+			}
+			if f.field.Kind() == reflect.String {
+				for _, s := range f.value.([]string) {
+					vals = append(vals, s)
 				}
-				for _, t := range ns {
+			} else {
+				for _, t := range f.value.([]float64) {
 					vals = append(vals, t)
 				}
 			}
-		case "IN", "NOT IN":
+		case "IN", "!IN":
 			if com == "IN" {
-				w = fmt.Sprintf("`%s` IN (", gorm.ToColumnName(f.field.name))
+				w = fmt.Sprintf("%s IN (", f.field.Column())
 			} else {
-				w = fmt.Sprintf("`%s` NOT IN (", gorm.ToColumnName(f.field.name))
+				w = fmt.Sprintf("%s NOT IN (", f.field.Column())
 			}
 
-			if f.field.kind == reflect.String {
-				ss, ok = hconverter.String2StringArray(f.value.(string))
-				if !ok {
-					return "", nil, herrors.ErrCallerInvalidRequest.New("invalid query condition %s", f.value.(string))
-				}
-				for i, t := range ss {
+			if f.field.Kind() == reflect.String {
+				for i, t := range f.value.([]string) {
 					vals = append(vals, t)
-					if i == len(ss)-1 {
+					if i == len(f.value.([]string))-1 {
 						w += "?"
 					} else {
 						w += "?,"
 					}
 				}
 			} else {
-				ns, ok = hconverter.String2NumberArray(f.value.(string))
-				if !ok {
-					return "", nil, herrors.ErrCallerInvalidRequest.New("invalid query condition %s", f.value.(string))
-				}
-				for i, t := range ns {
+				for i, t := range f.value.([]float64) {
 					vals = append(vals, t)
-					if i == len(ns)-1 {
+					if i == len(f.value.([]float64))-1 {
 						w += "?"
 					} else {
 						w += "?,"
@@ -685,32 +208,32 @@ func (this *Service) BuildWhereClause(fs *Filters) (string, []interface{}, *herr
 				}
 			}
 			w += ")"
-		case "LIKE", "NOT LIKE":
-			w = fmt.Sprintf("`%s` %s ?", gorm.ToColumnName(f.field.name), f.compare)
+		case "LIKE", "!LIKE":
+			if com == "LIKE" {
+				w = fmt.Sprintf("%s LIKE ?", f.field.Column())
+			} else {
+				w = fmt.Sprintf("%s NOT LIKE ?", f.field.Column())
+			}
 			v = fmt.Sprintf("%%%v%%", f.value)
 			vals = append(vals, v)
-		case "HAS_PREFIX", "NOT HAS_PREFIX":
+		case "HAS_PREFIX", "!HAS_PREFIX":
 			if com == "HAS_PREFIX" {
-				w = fmt.Sprintf("`%s` %s ?", gorm.ToColumnName(f.field.name), "LIKE")
+				w = fmt.Sprintf("%s LIKE ?", f.field.Column())
 			} else {
-				w = fmt.Sprintf("`%s` %s ?", gorm.ToColumnName(f.field.name), "NOT LIKE")
+				w = fmt.Sprintf("%s NOT LIKE ?", f.field.Column())
 			}
 			v = fmt.Sprintf("%v%%", f.value)
 			vals = append(vals, v)
-		case "HAS_SUFFIX", "NOT HAS_SUFFIX":
+		case "HAS_SUFFIX", "!HAS_SUFFIX":
 			if com == "HAS_SUFFIX" {
-				w = fmt.Sprintf("`%s` %s ?", gorm.ToColumnName(f.field.name), "LIKE")
+				w = fmt.Sprintf("%s LIKE ?", f.field.Column())
 			} else {
-				w = fmt.Sprintf("`%s` %s ?", gorm.ToColumnName(f.field.name), "NOT LIKE")
+				w = fmt.Sprintf("%s NOT LIKE ?", f.field.Column())
 			}
 			v = fmt.Sprintf("%%%v", f.value)
 			vals = append(vals, v)
-		case "IS", "NOT IS":
-			w = fmt.Sprintf("`%s` %s ?", gorm.ToColumnName(f.field.name), f.compare)
-			v = f.value
-			vals = append(vals, v)
 		default:
-			w = fmt.Sprintf("`%s` %s ?", gorm.ToColumnName(f.field.name), f.compare)
+			w = fmt.Sprintf("%s %s ?", f.field.Column(), f.compare)
 			vals = append(vals, f.value)
 		}
 		if i == 0 {
@@ -721,18 +244,18 @@ func (this *Service) BuildWhereClause(fs *Filters) (string, []interface{}, *herr
 
 	}
 
-	if len(fs.atomFilters) > 0 {
+	if len(fs.conditions) > 0 {
 		where = fmt.Sprintf("(%s)", where)
 	}
 
 	if fs.or {
 		logic = "OR"
 	}
-	for _, c := range fs.combinedFilters {
+	for _, c := range fs.filters {
 		if c == nil {
 			continue
 		}
-		w, vs, err := this.BuildWhereClause(c)
+		w, vs, err := this.buildWhereClause(c)
 		if err != nil {
 			return "", nil, err
 		}
@@ -781,9 +304,9 @@ func (this *Service) convertSql2GoValue(v interface{}, kind reflect.Kind) interf
 	}
 }
 
-func (this *Service) buildDimValues(o *object, dims []string) []interface{} {
+func (this *Service) buildDimValues(ins interface{}, fMap map[string]iField, dims []string) []interface{} {
 	var ret []interface{}
-	v := reflect.ValueOf(hruntime.CloneObject(o.instance))
+	v := reflect.ValueOf(hruntime.CloneObject(ins))
 	if dims == nil || len(dims) == 0 {
 		for i := 0; i < v.Elem().NumField(); i++ {
 			k := v.Elem().Field(i).Kind()
@@ -795,11 +318,11 @@ func (this *Service) buildDimValues(o *object, dims []string) []interface{} {
 		}
 	} else {
 		for _, s := range dims {
-			k := v.Elem().FieldByName(o.fieldMap[s].name).Kind()
+			k := v.Elem().FieldByName(fMap[s].Name()).Kind()
 			if k == reflect.Map || k == reflect.Slice || k == reflect.Struct || k == reflect.Ptr {
 				continue
 			}
-			f := this.convertGo2SqlType(v.Elem().FieldByName(o.fieldMap[s].name).Interface())
+			f := this.convertGo2SqlType(v.Elem().FieldByName(fMap[s].Name()).Interface())
 			ret = append(ret, f)
 		}
 	}
@@ -807,299 +330,447 @@ func (this *Service) buildDimValues(o *object, dims []string) []interface{} {
 	return ret
 }
 
-func (this *Service) bindDimValues(o *object, dims []string, values []interface{}) map[string]interface{} {
+func (this *Service) bindDimValues(fMap map[string]iField, dims []string, values []interface{}) map[string]interface{} {
 	ret := make(map[string]interface{})
 	for i, d := range dims {
-		if o.fieldMap[d].kind == reflect.Struct || o.fieldMap[d].kind == reflect.Slice {
+		if fMap[d].Kind() == reflect.Struct || fMap[d].Kind() == reflect.Slice {
 			continue
 		}
-		ret[d] = this.convertSql2GoValue(values[i], o.fieldMap[d].kind)
-		//if o.fieldMap[d].kind == reflect.String {
-		//	ret[d] = string(reflect.ValueOf(values[i]).Elem().Interface().([]byte))
-		//} else {
-		//	ret[d] = reflect.ValueOf(values[i]).Elem().Interface()
-		//}
+		ret[d] = this.convertSql2GoValue(values[i], fMap[d].Kind())
 	}
 	return ret
 }
 
-func (this *Service) GetObject(key string) *object {
-	return this.objectsWithKey[key]
-}
-
-func (this *Service) ParserRawFilters(o *object, fs *RawFilters) (*Filters, *herrors.Error) {
-	var fls *Filters
-	if len(fs.Conditions) > 0 {
-		fls = &Filters{
-			or: fs.Or,
-		}
-
-		for _, f := range fs.Conditions {
-			ss, err := this.parseCondition(f)
-			if err != nil {
-				return nil, err
-			}
-			af, err := this.convCondition2Filter(o, ss)
-			if err != nil {
-				return nil, err
-			}
-			fls.atomFilters = append(fls.atomFilters, af)
-		}
-
-		for _, rcf := range fs.SubFilters {
-			v, err := this.ParserRawFilters(o, &rcf)
-			if v != nil {
-				fls.combinedFilters = append(fls.combinedFilters, v)
-			} else {
-				return nil, err
-			}
-		}
-	}
-	return fls, nil
-}
-
-//func (this *Service) handleGormField(fields map[string]bool, f *reflect.StructField, kv map[string]string, of *field) *field {
-//	if kv["-"] != "" {
-//		return nil
-//	}
-//
-//	many2many := kv["many2many"]
-//	if many2many != "" {
-//		if f.Type.Kind() != reflect.Slice {
-//			panic(herrors.ErrSysInternal.New("invalid many2many tag:", f.Type.Elem().Name()))
-//		}
-//
-//		k := f.Type.Elem().Kind()
-//		if k != reflect.Struct {
-//			panic(herrors.ErrSysInternal.New("related object is not data source:", f.Type.Elem().Name()))
-//		}
-//
-//		ins := this.instancesWithName[f.Type.Elem().Name()]
-//		if ins == nil {
-//			panic(herrors.ErrSysInternal.New("related object is not added to GormPlugin:", f.Type.Name()))
-//		}
-//
-//		of.relation = &relationship{
-//			relType:        relTypeToMany,
-//			relatedObject:  ins,
-//			relatedObjName: hruntime.GetObjectName(ins),
-//			relatedField:   "ID",
-//			selfField:      "ID",
-//			relTable:       many2many,
-//		}
-//	} else {
-//		fk := kv["foreignkey"]
-//		rk := kv["references"]
-//		if rk == "" {
-//			rk = "ID"
-//		}
-//
-//		if fk != "" {
-//			if f.Type.Kind() == reflect.Struct {
-//				ins := this.instancesWithName[f.Type.Name()]
-//				if ins == nil {
-//					panic(herrors.ErrSysInternal.New("related object is not added to GormPlugin:", f.Type.Name()))
-//					return nil
-//				}
-//
-//				if fields[rk] && !fields[fk] {
-//					of.relation = &relationship{
-//						relType:        relTypeHasOne,
-//						relatedObject:  ins,
-//						relatedObjName: hruntime.GetObjectName(ins),
-//						relatedField:   fk,
-//						selfField:      rk,
-//					}
-//				} else if fields[fk] {
-//					of.relation = &relationship{
-//						relType:        relTypeBelongTo,
-//						relatedObject:  ins,
-//						relatedObjName: hruntime.GetObjectName(ins),
-//						relatedField:   fk,
-//						selfField:      rk,
-//					}
-//				}
-//				return of
-//			}
-//
-//			if f.Type.Kind() == reflect.Slice {
-//				k := f.Type.Elem().Kind()
-//				if k != reflect.Struct {
-//					panic(herrors.ErrSysInternal.New("related object is not data source:", f.Type.Elem().Name()))
-//				}
-//				ins := this.instancesWithName[f.Type.Elem().Name()]
-//				if ins == nil {
-//					panic(herrors.ErrSysInternal.New("related object is not added to GormPlugin:", f.Type.Name()))
-//				}
-//
-//				if fields[rk] && !fields[fk] {
-//					of.relation = &relationship{
-//						relType:        relTypeHasMany,
-//						relatedObject:  ins,
-//						relatedObjName: hruntime.GetObjectName(ins),
-//						relatedField:   fk,
-//						selfField:      rk,
-//					}
-//					return of
-//				}
-//			}
-//
-//			panic(herrors.ErrSysInternal.New("gorm foreignkey not assigned to a struct:", f.Name))
-//			return nil
-//		}
-//	}
-//
-//	return of
-//}
-
-func (this *Service) formatGormTags(kv map[string]string) map[string]string {
-	tags := make(map[string]string)
-	for k, v := range kv {
-		k2 := strings.ToLower(k)
-		tags[k2] = v
-	}
-	return tags
-}
-
-func (this *Service) parseCondition(s string) ([]string, *herrors.Error) {
+func (this *Service) parseCondition(fMap map[string]iField, s string) (*condition, *herrors.Error) {
 	ss := strings.ToUpper(s)
-	var res []string
 
 	i := strings.Index(ss, ">=")
 	if i >= 0 {
-		res = []string{strings.TrimSpace(s[:i]), strings.TrimSpace(s[i : i+2]), strings.TrimSpace(s[i+2:])}
-		goto out
+		f := fMap[strings.TrimSpace(s[:i])]
+		if f == nil {
+			return nil, herrors.ErrUserInvalidAct.New("invalid condition [%s], field not found", s)
+		}
+
+		switch f.Kind() {
+		case reflect.String:
+			return &condition{
+				field:   f,
+				compare: ">=",
+				value:   strings.TrimSpace(s[i+2:]),
+			}, nil
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Float64, reflect.Float32:
+			n, ok := hconverter.String2NumberDecimal(strings.TrimSpace(s[i+2:]))
+			if !ok {
+				return nil, herrors.ErrCallerInvalidRequest.New("invalid condition [%s]", s[i+2:])
+			}
+			return &condition{
+				field:   f,
+				compare: ">=",
+				value:   n,
+			}, nil
+		default:
+			return nil, herrors.ErrUserInvalidAct.New("field [%s] cannot use [>=]", f.Key())
+		}
 	}
 
-	i = strings.Index(ss, "<=")
-	if i >= 0 {
-		res = []string{strings.TrimSpace(s[:i]), strings.TrimSpace(s[i : i+2]), strings.TrimSpace(s[i+2:])}
-		goto out
+	if i = strings.Index(ss, "<="); i >= 0 {
+		f := fMap[strings.TrimSpace(s[:i])]
+		if f == nil {
+			return nil, herrors.ErrUserInvalidAct.New("invalid condition [%s], field not found", s)
+		}
+
+		switch f.Kind() {
+		case reflect.String:
+			return &condition{
+				field:   f,
+				compare: "<=",
+				value:   strings.TrimSpace(s[i+2:]),
+			}, nil
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Float64, reflect.Float32:
+			n, ok := hconverter.String2NumberDecimal(strings.TrimSpace(s[i+2:]))
+			if !ok {
+				return nil, herrors.ErrCallerInvalidRequest.New("invalid condition [%s]", s[i+2:])
+			}
+			return &condition{
+				field:   f,
+				compare: "<=",
+				value:   n,
+			}, nil
+		default:
+			return nil, herrors.ErrUserInvalidAct.New("field [%s] cannot use [<=]", f.Key())
+		}
 	}
 
-	i = strings.Index(ss, "!=")
-	if i >= 0 {
-		res = []string{strings.TrimSpace(s[:i]), strings.TrimSpace(s[i : i+2]), strings.TrimSpace(s[i+2:])}
-		goto out
+	if i = strings.Index(ss, "!="); i >= 0 {
+		f := fMap[strings.TrimSpace(s[:i])]
+		if f == nil {
+			return nil, herrors.ErrUserInvalidAct.New("invalid condition [%s], field not found", s)
+		}
+
+		switch f.Kind() {
+		case reflect.Bool:
+			return &condition{
+				field:   f,
+				compare: "!=",
+				value:   strings.TrimSpace(ss[i+2:]) == "TRUE",
+			}, nil
+		case reflect.String:
+			return &condition{
+				field:   f,
+				compare: "!=",
+				value:   strings.TrimSpace(s[i+2:]),
+			}, nil
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Float64, reflect.Float32:
+			n, ok := hconverter.String2NumberDecimal(strings.TrimSpace(s[i+2:]))
+			if !ok {
+				return nil, herrors.ErrCallerInvalidRequest.New("invalid condition [%s]", s[i+2:])
+			}
+			return &condition{
+				field:   f,
+				compare: "!=",
+				value:   n,
+			}, nil
+		default:
+			return nil, herrors.ErrUserInvalidAct.New("field [%s] cannot use [!=]", f.Key())
+		}
 	}
 
-	i = strings.Index(ss, "<")
-	if i >= 0 {
-		res = []string{strings.TrimSpace(s[:i]), strings.TrimSpace(s[i : i+1]), strings.TrimSpace(s[i+1:])}
-		goto out
+	if i = strings.Index(ss, "<"); i >= 0 {
+		f := fMap[strings.TrimSpace(s[:i])]
+		if f == nil {
+			return nil, herrors.ErrUserInvalidAct.New("invalid condition [%s], field not found", s)
+		}
+
+		switch f.Kind() {
+		case reflect.String:
+			return &condition{
+				field:   f,
+				compare: "<",
+				value:   strings.TrimSpace(s[i+1:]),
+			}, nil
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Float64, reflect.Float32:
+			n, ok := hconverter.String2NumberDecimal(strings.TrimSpace(s[i+1:]))
+			if !ok {
+				return nil, herrors.ErrCallerInvalidRequest.New("invalid condition [%s]", s[i+1:])
+			}
+			return &condition{
+				field:   f,
+				compare: "<",
+				value:   n,
+			}, nil
+		default:
+			return nil, herrors.ErrUserInvalidAct.New("field [%s] cannot use [<]", f.Key())
+		}
 	}
 
-	i = strings.Index(ss, ">")
-	if i >= 0 {
-		res = []string{strings.TrimSpace(s[:i]), strings.TrimSpace(s[i : i+1]), strings.TrimSpace(s[i+1:])}
-		goto out
+	if i = strings.Index(ss, ">"); i >= 0 {
+		f := fMap[strings.TrimSpace(s[:i])]
+		if f == nil {
+			return nil, herrors.ErrUserInvalidAct.New("invalid condition [%s], field not found", s)
+		}
+
+		switch f.Kind() {
+		case reflect.String:
+			return &condition{
+				field:   f,
+				compare: ">",
+				value:   strings.TrimSpace(s[i+1:]),
+			}, nil
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Float64, reflect.Float32:
+			n, ok := hconverter.String2NumberDecimal(strings.TrimSpace(s[i+1:]))
+			if !ok {
+				return nil, herrors.ErrCallerInvalidRequest.New("invalid condition [%s]", s[i+1:])
+			}
+			return &condition{
+				field:   f,
+				compare: ">",
+				value:   n,
+			}, nil
+		default:
+			return nil, herrors.ErrUserInvalidAct.New("field [%s] cannot use [>]", f.Key())
+		}
 	}
 
-	i = strings.Index(ss, "==")
-	if i >= 0 {
-		res = []string{strings.TrimSpace(s[:i]), "=", strings.TrimSpace(s[i+2:])}
-		goto out
+	if i = strings.Index(ss, "=="); i >= 0 {
+		f := fMap[strings.TrimSpace(s[:i])]
+		if f == nil {
+			return nil, herrors.ErrUserInvalidAct.New("invalid condition [%s], field not found", s)
+		}
+
+		switch f.Kind() {
+		case reflect.Bool:
+			return &condition{
+				field:   f,
+				compare: "=",
+				value:   strings.TrimSpace(ss[i+2:]) == "TRUE",
+			}, nil
+		case reflect.String:
+			return &condition{
+				field:   f,
+				compare: "=",
+				value:   strings.TrimSpace(s[i+2:]),
+			}, nil
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Float64, reflect.Float32:
+			n, ok := hconverter.String2NumberDecimal(strings.TrimSpace(s[i+2:]))
+			if !ok {
+				return nil, herrors.ErrCallerInvalidRequest.New("invalid condition [%s]", s)
+			}
+			return &condition{
+				field:   f,
+				compare: "=",
+				value:   n,
+			}, nil
+		default:
+			return nil, herrors.ErrUserInvalidAct.New("field [%s] cannot use [=]", f.Key())
+		}
 	}
 
-	if i = strings.Index(ss, " NOT IN "); i >= 0 {
-		res = []string{strings.TrimSpace(s[:i]), strings.TrimSpace(s[i : i+8]), strings.TrimSpace(s[i+8:])}
-		goto out
-	} else if i = strings.Index(ss, " IN "); i >= 0 {
-		res = []string{strings.TrimSpace(s[:i]), strings.TrimSpace(s[i : i+4]), strings.TrimSpace(s[i+4:])}
-		goto out
+	if i = strings.Index(ss, " !IN "); i >= 0 {
+		f := fMap[strings.TrimSpace(s[:i])]
+		if f == nil {
+			return nil, herrors.ErrUserInvalidAct.New("invalid condition [%s], field not found", s)
+		}
+
+		switch f.Kind() {
+		case reflect.String:
+			n, ok := hconverter.String2StringArray(strings.TrimSpace(s[i+5:]))
+			if !ok {
+				return nil, herrors.ErrCallerInvalidRequest.New("invalid condition [%s]", s)
+			}
+			return &condition{
+				field:   f,
+				compare: "!IN",
+				value:   n,
+			}, nil
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Float64, reflect.Float32:
+			n, ok := hconverter.String2NumberArray(strings.TrimSpace(s[i+5:]))
+			if !ok {
+				return nil, herrors.ErrCallerInvalidRequest.New("invalid condition [%s]", s)
+			}
+			return &condition{
+				field:   f,
+				compare: "!IN",
+				value:   n,
+			}, nil
+		default:
+			return nil, herrors.ErrUserInvalidAct.New("field [%s] cannot use [!IN]", f.Key())
+		}
 	}
 
-	if i = strings.Index(ss, " NOT BETWEEN "); i >= 0 {
-		res = []string{strings.TrimSpace(s[:i]), strings.TrimSpace(s[i : i+13]), strings.TrimSpace(s[i+13:])}
-		goto out
+	if i = strings.Index(ss, " IN "); i >= 0 {
+		f := fMap[strings.TrimSpace(s[:i])]
+		if f == nil {
+			return nil, herrors.ErrUserInvalidAct.New("invalid condition [%s], field not found", s)
+		}
+
+		switch f.Kind() {
+		case reflect.String:
+			n, ok := hconverter.String2StringArray(strings.TrimSpace(s[i+4:]))
+			if !ok {
+				return nil, herrors.ErrCallerInvalidRequest.New("invalid condition [%s]", s)
+			}
+			return &condition{
+				field:   f,
+				compare: "IN",
+				value:   n,
+			}, nil
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Float64, reflect.Float32:
+			n, ok := hconverter.String2NumberArray(strings.TrimSpace(s[i+4:]))
+			if !ok {
+				return nil, herrors.ErrCallerInvalidRequest.New("invalid condition [%s]", s)
+			}
+			return &condition{
+				field:   f,
+				compare: "IN",
+				value:   n,
+			}, nil
+		default:
+			return nil, herrors.ErrUserInvalidAct.New("field [%s] cannot use [IN]", f.Key())
+		}
+	}
+
+	if i = strings.Index(ss, " !BETWEEN "); i >= 0 {
+		f := fMap[strings.TrimSpace(s[:i])]
+		if f == nil {
+			return nil, herrors.ErrUserInvalidAct.New("invalid condition [%s], field not found", s)
+		}
+
+		switch f.Kind() {
+		case reflect.String:
+			from, to, ok := hconverter.String2StringRange(strings.TrimSpace(s[i+10:]))
+			if !ok {
+				return nil, herrors.ErrCallerInvalidRequest.New("invalid condition [%s]", s)
+			}
+			return &condition{
+				field:   f,
+				compare: "!BETWEEN",
+				value:   []string{from, to},
+			}, nil
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Float64, reflect.Float32:
+			from, to, ok := hconverter.String2NumberRange(strings.TrimSpace(s[i+10:]))
+			if !ok {
+				return nil, herrors.ErrCallerInvalidRequest.New("invalid condition [%s]", s)
+			}
+			return &condition{
+				field:   f,
+				compare: "!BETWEEN",
+				value:   []float64{from, to},
+			}, nil
+		default:
+			return nil, herrors.ErrUserInvalidAct.New("field [%s] cannot use [!BETWEEN]", f.Key())
+		}
 	} else if i = strings.Index(ss, " BETWEEN "); i >= 0 {
-		res = []string{strings.TrimSpace(s[:i]), strings.TrimSpace(s[i : i+9]), strings.TrimSpace(s[i+9:])}
-		goto out
+		f := fMap[strings.TrimSpace(s[:i])]
+		if f == nil {
+			return nil, herrors.ErrUserInvalidAct.New("invalid condition [%s], field not found", s)
+		}
+
+		switch f.Kind() {
+		case reflect.String:
+			from, to, ok := hconverter.String2StringRange(strings.TrimSpace(s[i+9:]))
+			if !ok {
+				return nil, herrors.ErrCallerInvalidRequest.New("invalid condition [%s]", s)
+			}
+			return &condition{
+				field:   f,
+				compare: "BETWEEN",
+				value:   []string{from, to},
+			}, nil
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Float64, reflect.Float32:
+			from, to, ok := hconverter.String2NumberRange(strings.TrimSpace(s[i+9:]))
+			if !ok {
+				return nil, herrors.ErrCallerInvalidRequest.New("invalid condition [%s]", s)
+			}
+			return &condition{
+				field:   f,
+				compare: "BETWEEN",
+				value:   []float64{from, to},
+			}, nil
+		default:
+			return nil, herrors.ErrUserInvalidAct.New("field [%s] cannot use [BETWEEN]", f.Key())
+		}
 	}
 
-	if i = strings.Index(ss, " NOT LIKE "); i >= 0 {
-		res = []string{strings.TrimSpace(s[:i]), strings.TrimSpace(s[i : i+10]), strings.TrimSpace(s[i+10:])}
-		goto out
-	} else if i = strings.Index(ss, " LIKE "); i >= 0 {
-		res = []string{strings.TrimSpace(s[:i]), strings.TrimSpace(s[i : i+6]), strings.TrimSpace(s[i+6:])}
-		goto out
+	if i = strings.Index(ss, " !LIKE "); i >= 0 {
+		f := fMap[strings.TrimSpace(s[:i])]
+		if f == nil {
+			return nil, herrors.ErrUserInvalidAct.New("invalid condition [%s], field not found", s)
+		}
+
+		switch f.Kind() {
+		case reflect.String:
+			return &condition{
+				field:   f,
+				compare: "!LIKE",
+				value:   strings.TrimSpace(s[i+7:]),
+			}, nil
+		default:
+			return nil, herrors.ErrUserInvalidAct.New("field [%s] cannot use [!LIKE]", f.Key())
+		}
 	}
 
-	if i = strings.Index(ss, " NOT HAS_PREFIX "); i >= 0 {
-		res = []string{strings.TrimSpace(s[:i]), strings.TrimSpace(s[i : i+16]), strings.TrimSpace(s[i+16:])}
-		goto out
-	} else if i = strings.Index(ss, " HAS_PREFIX "); i >= 0 {
-		res = []string{strings.TrimSpace(s[:i]), strings.TrimSpace(s[i : i+12]), strings.TrimSpace(s[i+12:])}
-		goto out
+	if i = strings.Index(ss, " LIKE "); i >= 0 {
+		f := fMap[strings.TrimSpace(s[:i])]
+		if f == nil {
+			return nil, herrors.ErrUserInvalidAct.New("invalid condition [%s], field not found", s)
+		}
+
+		switch f.Kind() {
+		case reflect.String:
+			return &condition{
+				field:   f,
+				compare: "LIKE",
+				value:   strings.TrimSpace(s[i+6:]),
+			}, nil
+		default:
+			return nil, herrors.ErrUserInvalidAct.New("field [%s] cannot use [LIKE]", f.Key())
+		}
 	}
 
-	if i = strings.Index(ss, " NOT HAS_SUFFIX "); i >= 0 {
-		res = []string{strings.TrimSpace(s[:i]), strings.TrimSpace(s[i : i+16]), strings.TrimSpace(s[i+16:])}
-		goto out
-	} else if i = strings.Index(ss, " HAS_SUFFIX "); i >= 0 {
-		res = []string{strings.TrimSpace(s[:i]), strings.TrimSpace(s[i : i+12]), strings.TrimSpace(s[i+12:])}
-		goto out
+	if i = strings.Index(ss, " !HAS_PREFIX "); i >= 0 {
+		f := fMap[strings.TrimSpace(s[:i])]
+		if f == nil {
+			return nil, herrors.ErrUserInvalidAct.New("invalid condition [%s], field not found", s)
+		}
+
+		switch f.Kind() {
+		case reflect.String:
+			return &condition{
+				field:   f,
+				compare: "!HAS_PREFIX",
+				value:   strings.TrimSpace(s[i+13:]),
+			}, nil
+		default:
+			return nil, herrors.ErrUserInvalidAct.New("field [%s] cannot use [!HAS_PREFIX]", f.Key())
+		}
 	}
 
-	if i = strings.Index(ss, " NOT IS "); i >= 0 {
-		res = []string{strings.TrimSpace(s[:i]), strings.TrimSpace(s[i : i+8]), strings.TrimSpace(s[i+8:])}
-		goto out
-	} else if i = strings.Index(ss, " IS "); i >= 0 {
-		res = []string{strings.TrimSpace(s[:i]), strings.TrimSpace(s[i : i+4]), strings.TrimSpace(s[i+4:])}
-		goto out
+	if i = strings.Index(ss, " HAS_PREFIX "); i >= 0 {
+		f := fMap[strings.TrimSpace(s[:i])]
+		if f == nil {
+			return nil, herrors.ErrUserInvalidAct.New("invalid condition [%s], field not found", s)
+		}
+
+		switch f.Kind() {
+		case reflect.String:
+			return &condition{
+				field:   f,
+				compare: "HAS_PREFIX",
+				value:   strings.TrimSpace(s[i+12:]),
+			}, nil
+		default:
+			return nil, herrors.ErrUserInvalidAct.New("field [%s] cannot use [HAS_PREFIX]", f.Key())
+		}
+	}
+
+	if i = strings.Index(ss, " !HAS_SUFFIX "); i >= 0 {
+		f := fMap[strings.TrimSpace(s[:i])]
+		if f == nil {
+			return nil, herrors.ErrUserInvalidAct.New("invalid condition [%s], field not found", s)
+		}
+
+		switch f.Kind() {
+		case reflect.String:
+			return &condition{
+				field:   f,
+				compare: "!HAS_SUFFIX",
+				value:   strings.TrimSpace(s[i+13:]),
+			}, nil
+		default:
+			return nil, herrors.ErrUserInvalidAct.New("field [%s] cannot use [!HAS_SUFFIX]", f.Key())
+		}
+	}
+
+	if i = strings.Index(ss, " HAS_SUFFIX "); i >= 0 {
+		f := fMap[strings.TrimSpace(s[:i])]
+		if f == nil {
+			return nil, herrors.ErrUserInvalidAct.New("invalid condition [%s], field not found", s)
+		}
+
+		switch f.Kind() {
+		case reflect.String:
+			return &condition{
+				field:   f,
+				compare: "HAS_SUFFIX",
+				value:   strings.TrimSpace(s[i+12:]),
+			}, nil
+		default:
+			return nil, herrors.ErrUserInvalidAct.New("field [%s] cannot use [HAS_SUFFIX]", f.Key())
+		}
 	}
 
 	return nil, herrors.ErrSysInternal.New("invalid condition operator in condition parameter [%s]", s)
-
-out:
-	if len(res) != 3 {
-		return nil, herrors.ErrSysInternal.New("invalid condition format %s", s)
-	}
-
-	return res, nil
 }
 
-func (this *Service) convCondition2Filter(o *object, cons []string) (*atomFilter, *herrors.Error) {
-	if len(cons) != 3 {
-		return nil, herrors.ErrCallerInvalidRequest.New("invalid condition [%s]", strings.Join(cons, ""))
-	}
-
-	v := o.fieldMap[cons[0]]
-	if v != nil {
-		af := &atomFilter{
-			field:   v,
-			compare: cons[1],
-		}
-		if v.kind == reflect.Bool {
-			if strings.ToLower(strings.TrimSpace(cons[2])) == "true" {
-				af.value = true
-			} else {
-				af.value = false
-			}
-		} else {
-			af.value = cons[2]
-		}
-		return af, nil
-	} else {
-		return nil, herrors.ErrCallerInvalidRequest.New("invalid field [%s]", cons[0])
-	}
-
-}
-
-func (this *Service) mountHookCallers(args ...interface{}) {
-	for i := 0; i < len(args); i++ {
-		hookCallers := args[0].([]htypes.Any)
-		for _, h := range hookCallers {
-			this.mountAfterDelHook(h)
-			this.mountBeforeDelHook(h)
-			this.mountAfterQueryHook(h)
-			this.mountBeforeQueryHook(h)
-			this.mountAfterCreateHook(h)
-			this.mountBeforeCreateHook(h)
-			this.mountAfterUpdateHook(h)
-			this.mountBeforeUpdateHook(h)
-		}
-	}
+func (this *Service) mountHookCallers(h htypes.Any) {
+	this.mountAfterDelHook(h)
+	this.mountBeforeDelHook(h)
+	this.mountAfterQueryHook(h)
+	this.mountBeforeQueryHook(h)
+	this.mountAfterCreateHook(h)
+	this.mountBeforeCreateHook(h)
+	this.mountAfterUpdateHook(h)
+	this.mountBeforeUpdateHook(h)
 }
 
 func (this *Service) mountBeforeCreateHook(anchor htypes.Any) {
@@ -1109,10 +780,11 @@ func (this *Service) mountBeforeCreateHook(anchor htypes.Any) {
 	n := val.NumMethod()
 	for i := 0; i < n; i++ {
 		method := typ.Method(i)
-		mtype := method.Type
-		if method.PkgPath != "" {
+		if !method.IsExported() {
 			continue
 		}
+
+		mtype := method.Type
 
 		if mtype.NumOut() != 0 {
 			continue
@@ -1128,7 +800,10 @@ func (this *Service) mountBeforeCreateHook(anchor htypes.Any) {
 		}
 
 		ctxType = mtype.In(2)
-		if ctxType.Name() != "Map" {
+		if ctxType.Kind() != reflect.Ptr {
+			continue
+		}
+		if ctxType.Elem().Name() != "CreateRequest" {
 			continue
 		}
 
@@ -1159,10 +834,11 @@ func (this *Service) mountAfterCreateHook(anchor htypes.Any) {
 	n := val.NumMethod()
 	for i := 0; i < n; i++ {
 		method := typ.Method(i)
-		mtype := method.Type
-		if method.PkgPath != "" {
+		if !method.IsExported() {
 			continue
 		}
+
+		mtype := method.Type
 
 		if mtype.NumOut() != 0 {
 			continue
@@ -1178,7 +854,10 @@ func (this *Service) mountAfterCreateHook(anchor htypes.Any) {
 		}
 
 		ctxType = mtype.In(2)
-		if ctxType.Name() != "Map" {
+		if ctxType.Kind() != reflect.Ptr {
+			continue
+		}
+		if ctxType.Elem().Name() != "CreateRequest" {
 			continue
 		}
 
@@ -1201,16 +880,17 @@ func (this *Service) mountBeforeUpdateHook(anchor htypes.Any) {
 	n := val.NumMethod()
 	for i := 0; i < n; i++ {
 		method := typ.Method(i)
-		mtype := method.Type
-		if method.PkgPath != "" {
+		if !method.IsExported() {
 			continue
 		}
+
+		mtype := method.Type
 
 		if mtype.NumOut() != 0 {
 			continue
 		}
 
-		if mtype.NumIn() != 6 {
+		if mtype.NumIn() != 5 {
 			continue
 		}
 
@@ -1220,16 +900,14 @@ func (this *Service) mountBeforeUpdateHook(anchor htypes.Any) {
 		}
 
 		ctxType = mtype.In(2)
-		if ctxType.Kind() != reflect.Int64 {
+		if ctxType.Kind() != reflect.Ptr {
+			continue
+		}
+		if ctxType.Elem().Name() != "UpdateRequest" {
 			continue
 		}
 
 		ctxType = mtype.In(3)
-		if ctxType.Name() != "Map" {
-			continue
-		}
-
-		ctxType = mtype.In(4)
 		if ctxType.Kind() != reflect.Ptr {
 			continue
 		}
@@ -1237,7 +915,7 @@ func (this *Service) mountBeforeUpdateHook(anchor htypes.Any) {
 			continue
 		}
 
-		ctxType = mtype.In(5)
+		ctxType = mtype.In(4)
 		if ctxType.Kind() != reflect.Ptr {
 			continue
 		}
@@ -1245,7 +923,7 @@ func (this *Service) mountBeforeUpdateHook(anchor htypes.Any) {
 			continue
 		}
 
-		this.beforeUpdateHookCallers[method.Name] = &core.MethodCaller{val, method.Func}
+		this.beforeUpdateHookCallers[method.Name] = &core.MethodCaller{Object: val, Handler: method.Func}
 	}
 }
 
@@ -1256,16 +934,17 @@ func (this *Service) mountAfterUpdateHook(anchor htypes.Any) {
 	n := val.NumMethod()
 	for i := 0; i < n; i++ {
 		method := typ.Method(i)
-		mtype := method.Type
-		if method.PkgPath != "" {
+		if !method.IsExported() {
 			continue
 		}
+
+		mtype := method.Type
 
 		if mtype.NumOut() != 0 {
 			continue
 		}
 
-		if mtype.NumIn() != 5 {
+		if mtype.NumIn() != 4 {
 			continue
 		}
 
@@ -1275,16 +954,14 @@ func (this *Service) mountAfterUpdateHook(anchor htypes.Any) {
 		}
 
 		ctxType = mtype.In(2)
-		if ctxType.Kind() != reflect.Int64 {
+		if ctxType.Kind() != reflect.Ptr {
+			continue
+		}
+		if ctxType.Elem().Name() != "UpdateRequest" {
 			continue
 		}
 
 		ctxType = mtype.In(3)
-		if ctxType.Name() != "Map" {
-			continue
-		}
-
-		ctxType = mtype.In(4)
 		if ctxType.Kind() != reflect.Ptr {
 			continue
 		}
@@ -1292,7 +969,7 @@ func (this *Service) mountAfterUpdateHook(anchor htypes.Any) {
 			continue
 		}
 
-		this.afterUpdateHookCallers[method.Name] = &core.MethodCaller{val, method.Func}
+		this.afterUpdateHookCallers[method.Name] = &core.MethodCaller{Object: val, Handler: method.Func}
 	}
 }
 
@@ -1303,10 +980,10 @@ func (this *Service) mountBeforeDelHook(anchor htypes.Any) {
 	n := val.NumMethod()
 	for i := 0; i < n; i++ {
 		method := typ.Method(i)
-		mtype := method.Type
-		if method.PkgPath != "" {
+		if !method.IsExported() {
 			continue
 		}
+		mtype := method.Type
 
 		if mtype.NumOut() != 0 {
 			continue
@@ -1322,7 +999,10 @@ func (this *Service) mountBeforeDelHook(anchor htypes.Any) {
 		}
 
 		ctxType = mtype.In(2)
-		if ctxType.Kind() != reflect.Slice {
+		if ctxType.Kind() != reflect.Ptr {
+			continue
+		}
+		if ctxType.Elem().Name() != "DeleteRequest" {
 			continue
 		}
 
@@ -1353,10 +1033,11 @@ func (this *Service) mountAfterDelHook(anchor htypes.Any) {
 	n := val.NumMethod()
 	for i := 0; i < n; i++ {
 		method := typ.Method(i)
-		mtype := method.Type
-		if method.PkgPath != "" {
+		if !method.IsExported() {
 			continue
 		}
+
+		mtype := method.Type
 
 		if mtype.NumOut() != 0 {
 			continue
@@ -1372,7 +1053,10 @@ func (this *Service) mountAfterDelHook(anchor htypes.Any) {
 		}
 
 		ctxType = mtype.In(2)
-		if ctxType.Kind() != reflect.Slice {
+		if ctxType.Kind() != reflect.Ptr {
+			continue
+		}
+		if ctxType.Elem().Name() != "DeleteRequest" {
 			continue
 		}
 
@@ -1384,7 +1068,7 @@ func (this *Service) mountAfterDelHook(anchor htypes.Any) {
 			continue
 		}
 
-		this.afterDelHookCallers[method.Name] = &core.MethodCaller{val, method.Func}
+		this.afterDelHookCallers[method.Name] = &core.MethodCaller{Object: val, Handler: method.Func}
 	}
 }
 
@@ -1395,10 +1079,11 @@ func (this *Service) mountBeforeQueryHook(anchor htypes.Any) {
 	n := val.NumMethod()
 	for i := 0; i < n; i++ {
 		method := typ.Method(i)
-		mtype := method.Type
-		if method.PkgPath != "" {
+		if !method.IsExported() {
 			continue
 		}
+
+		mtype := method.Type
 
 		if mtype.NumOut() != 0 {
 			continue
@@ -1414,7 +1099,10 @@ func (this *Service) mountBeforeQueryHook(anchor htypes.Any) {
 		}
 
 		ctxType = mtype.In(2)
-		if ctxType.Name() != "Map" {
+		if ctxType.Kind() != reflect.Ptr {
+			continue
+		}
+		if ctxType.Name() != "QueryRequest" {
 			continue
 		}
 
@@ -1434,7 +1122,7 @@ func (this *Service) mountBeforeQueryHook(anchor htypes.Any) {
 			continue
 		}
 
-		this.beforeQueryHookCallers[method.Name] = &core.MethodCaller{val, method.Func}
+		this.beforeQueryHookCallers[method.Name] = &core.MethodCaller{Object: val, Handler: method.Func}
 	}
 }
 
@@ -1445,16 +1133,16 @@ func (this *Service) mountAfterQueryHook(anchor htypes.Any) {
 	n := val.NumMethod()
 	for i := 0; i < n; i++ {
 		method := typ.Method(i)
-		mtype := method.Type
-		if method.PkgPath != "" {
+		if !method.IsExported() {
 			continue
 		}
+		mtype := method.Type
 
 		if mtype.NumOut() != 0 {
 			continue
 		}
 
-		if mtype.NumIn() != 5 {
+		if mtype.NumIn() != 4 {
 			continue
 		}
 
@@ -1465,17 +1153,14 @@ func (this *Service) mountAfterQueryHook(anchor htypes.Any) {
 
 		// parameters
 		ctxType = mtype.In(2)
-		if ctxType.Name() != "Map" {
+		if ctxType.Kind() != reflect.Ptr {
+			continue
+		}
+		if ctxType.Name() != "QueryRequest" {
 			continue
 		}
 
-		//records
 		ctxType = mtype.In(3)
-		if ctxType.Kind() != reflect.Slice {
-			continue
-		}
-
-		ctxType = mtype.In(4)
 		if ctxType.Kind() != reflect.Ptr {
 			continue
 		}
@@ -1483,11 +1168,11 @@ func (this *Service) mountAfterQueryHook(anchor htypes.Any) {
 			continue
 		}
 
-		this.afterQueryHookCallers[method.Name] = &core.MethodCaller{val, method.Func}
+		this.afterQueryHookCallers[method.Name] = &core.MethodCaller{Object: val, Handler: method.Func}
 	}
 }
 
-func (this *Service) callBeforeCreateHook(name string, ps htypes.Map, reply *core.CallerResponse, stop *bool) {
+func (this *Service) callBeforeCreateHook(name string, req *CreateRequest, reply *core.CallerResponse, stop *bool) {
 	if !hconf.IsDebug() {
 		defer func() {
 			e := recover()
@@ -1503,10 +1188,10 @@ func (this *Service) callBeforeCreateHook(name string, ps htypes.Map, reply *cor
 		return
 	}
 
-	caller.Handler.Call([]reflect.Value{caller.Object, reflect.ValueOf(this), reflect.ValueOf(ps), reflect.ValueOf(reply), reflect.ValueOf(stop)})
+	caller.Handler.Call([]reflect.Value{caller.Object, reflect.ValueOf(this), reflect.ValueOf(req), reflect.ValueOf(reply), reflect.ValueOf(stop)})
 }
 
-func (this *Service) callBeforeUpdateHook(name string, id int64, ps htypes.Map, reply *core.CallerResponse, stop *bool) {
+func (this *Service) callBeforeUpdateHook(name string, req *UpdateRequest, reply *core.CallerResponse, stop *bool) {
 	if !hconf.IsDebug() {
 		defer func() {
 			e := recover()
@@ -1522,10 +1207,10 @@ func (this *Service) callBeforeUpdateHook(name string, id int64, ps htypes.Map, 
 		return
 	}
 
-	caller.Handler.Call([]reflect.Value{caller.Object, reflect.ValueOf(this), reflect.ValueOf(id), reflect.ValueOf(ps), reflect.ValueOf(reply), reflect.ValueOf(stop)})
+	caller.Handler.Call([]reflect.Value{caller.Object, reflect.ValueOf(this), reflect.ValueOf(req), reflect.ValueOf(reply), reflect.ValueOf(stop)})
 }
 
-func (this *Service) callBeforeQueryHook(name string, ps htypes.Map, reply *core.CallerResponse, stop *bool) {
+func (this *Service) callBeforeQueryHook(name string, req *QueryRequest, reply *core.CallerResponse, stop *bool) {
 	if !hconf.IsDebug() {
 		defer func() {
 			e := recover()
@@ -1537,14 +1222,14 @@ func (this *Service) callBeforeQueryHook(name string, ps htypes.Map, reply *core
 
 	caller := this.beforeQueryHookCallers[name]
 	if caller == nil {
-		reply.Error = herrors.ErrSysInternal.New("before query hook %s not found", name)
+		reply.Error = herrors.ErrSysInternal.New("before query hook [%s] not found", name)
 		return
 	}
 
-	caller.Handler.Call([]reflect.Value{caller.Object, reflect.ValueOf(this), reflect.ValueOf(ps), reflect.ValueOf(reply), reflect.ValueOf(stop)})
+	caller.Handler.Call([]reflect.Value{caller.Object, reflect.ValueOf(this), reflect.ValueOf(req), reflect.ValueOf(reply), reflect.ValueOf(stop)})
 }
 
-func (this *Service) callBeforeDelHook(name string, ids []int64, reply *core.CallerResponse, stop *bool) {
+func (this *Service) callBeforeDelHook(name string, req *DeleteRequest, reply *core.CallerResponse, stop *bool) {
 	if !hconf.IsDebug() {
 		defer func() {
 			e := recover()
@@ -1560,10 +1245,10 @@ func (this *Service) callBeforeDelHook(name string, ids []int64, reply *core.Cal
 		return
 	}
 
-	caller.Handler.Call([]reflect.Value{caller.Object, reflect.ValueOf(this), reflect.ValueOf(ids), reflect.ValueOf(reply), reflect.ValueOf(stop)})
+	caller.Handler.Call([]reflect.Value{caller.Object, reflect.ValueOf(this), reflect.ValueOf(req), reflect.ValueOf(reply), reflect.ValueOf(stop)})
 }
 
-func (this *Service) callAfterCreateHook(name string, ps htypes.Map, reply *core.CallerResponse) {
+func (this *Service) callAfterCreateHook(name string, req *CreateRequest, reply *core.CallerResponse) {
 	if !hconf.IsDebug() {
 		defer func() {
 			e := recover()
@@ -1579,10 +1264,10 @@ func (this *Service) callAfterCreateHook(name string, ps htypes.Map, reply *core
 		return
 	}
 
-	caller.Handler.Call([]reflect.Value{caller.Object, reflect.ValueOf(this), reflect.ValueOf(ps), reflect.ValueOf(reply)})
+	caller.Handler.Call([]reflect.Value{caller.Object, reflect.ValueOf(this), reflect.ValueOf(req), reflect.ValueOf(reply)})
 }
 
-func (this *Service) callAfterUpdateHook(name string, id int64, ps htypes.Map, reply *core.CallerResponse) {
+func (this *Service) callAfterUpdateHook(name string, req *UpdateRequest, reply *core.CallerResponse) {
 	if !hconf.IsDebug() {
 		defer func() {
 			e := recover()
@@ -1598,10 +1283,10 @@ func (this *Service) callAfterUpdateHook(name string, id int64, ps htypes.Map, r
 		return
 	}
 
-	caller.Handler.Call([]reflect.Value{caller.Object, reflect.ValueOf(this), reflect.ValueOf(id), reflect.ValueOf(ps), reflect.ValueOf(reply)})
+	caller.Handler.Call([]reflect.Value{caller.Object, reflect.ValueOf(this), reflect.ValueOf(req), reflect.ValueOf(reply)})
 }
 
-func (this *Service) callAfterQueryHook(name string, ps htypes.Map, records []interface{}, reply *core.CallerResponse) {
+func (this *Service) callAfterQueryHook(name string, req *QueryRequest, reply *core.CallerResponse) {
 	if !hconf.IsDebug() {
 		defer func() {
 			e := recover()
@@ -1617,10 +1302,10 @@ func (this *Service) callAfterQueryHook(name string, ps htypes.Map, records []in
 		return
 	}
 
-	caller.Handler.Call([]reflect.Value{caller.Object, reflect.ValueOf(this), reflect.ValueOf(ps), reflect.ValueOf(records), reflect.ValueOf(reply)})
+	caller.Handler.Call([]reflect.Value{caller.Object, reflect.ValueOf(this), reflect.ValueOf(req), reflect.ValueOf(reply)})
 }
 
-func (this *Service) callAfterDelHook(name string, ids []int64, reply *core.CallerResponse) {
+func (this *Service) callAfterDelHook(name string, req *DeleteRequest, reply *core.CallerResponse) {
 	if !hconf.IsDebug() {
 		defer func() {
 			e := recover()
@@ -1636,10 +1321,10 @@ func (this *Service) callAfterDelHook(name string, ids []int64, reply *core.Call
 		return
 	}
 
-	caller.Handler.Call([]reflect.Value{caller.Object, reflect.ValueOf(this), reflect.ValueOf(ids), reflect.ValueOf(reply)})
+	caller.Handler.Call([]reflect.Value{caller.Object, reflect.ValueOf(this), reflect.ValueOf(req), reflect.ValueOf(reply)})
 }
 
-func (this *Service) autoFill(funName string, ps htypes.Map) interface{} {
+func (this *Service) autoFill(funName string, _ htypes.Map) interface{} {
 	switch funName {
 	case "$now":
 		return hdatetime.Now()
@@ -1695,42 +1380,38 @@ func (this *Service) parseStringArray(s string) ([]string, *herrors.Error) {
 
 }
 
-func (this *Service) parseObject(o interface{}) *object {
+func (this *Service) parseObject(name string, o interface{}) (*object, *herrors.Error) {
 	obj := &object{}
 	obj.instance = o
-	obj.name = hruntime.GetObjectName(o)
+	obj.name = name
 
 	manageable := false
 	t := reflect.TypeOf(o)
-	fields := make(map[string]bool)
-	for i := 0; i < t.NumField(); i++ {
-		fields[t.Field(i).Name] = true
+	if t.Kind() == reflect.Ptr {
+		t = reflect.ValueOf(o).Elem().Type()
 	}
 
+	var tabNamingFields []string
+	fieldKeyByNameMap := make(map[string]string)
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
 		tag := f.Tag.Get("data")
-		if f.Type.Kind() == reflect.Struct && f.Type.Name() == "DataSource" {
+
+		if f.Type.Kind() == reflect.Struct && f.Type.Name() == "DataObject" {
 			obj.deniedOperations = make(map[string]bool)
 			manageable = true
+
 			if tag == "" {
-				obj.key = gorm.ToTableName(hruntime.GetObjectName(o))
+				obj.key = this.defaultDB.Config.NamingStrategy.TableName(hruntime.GetObjectName(o))
 			} else {
 				kv := hruntime.ParseTag(tag)
-				for k, v := range kv {
-					if k == "key" {
-						obj.key = v
-						break
-					} else if v == "" {
-						obj.key = k
-						break
-					}
-				}
-
+				key := ""
 				for k, v := range kv {
 					switch k {
-					case "desc":
-						obj.desc = v
+					case "key", "":
+						key = v
+					case "db":
+						obj.database = v
 					case "deny":
 						for _, s := range strings.Split(v, ",") {
 							obj.deniedOperations[s] = true
@@ -1747,21 +1428,27 @@ func (this *Service) parseObject(o interface{}) *object {
 						this.beforeQueryHookNames[obj.key] = v
 					case "afterQuery":
 						this.afterQueryHookNames[obj.key] = v
-					case "beforeDel":
+					case "beforeDelete":
 						this.beforeDelHookNames[obj.key] = v
-					case "afterDel":
+					case "afterDelete":
 						this.afterDelHookNames[obj.key] = v
 					}
+				}
+
+				if key == "" {
+					obj.key = this.getDB(obj.database).NamingStrategy.TableName(obj.name)
+				} else {
+					obj.key = key
 				}
 			}
 			continue
 		}
 
-		if tag == "-" {
+		if tag == "-" || !manageable {
 			continue
 		}
-		of := newField()
 
+		of := newObjectField()
 		of.kind = f.Type.Kind()
 		if of.kind == reflect.Struct {
 			of.kind = reflect.Map
@@ -1772,10 +1459,12 @@ func (this *Service) parseObject(o interface{}) *object {
 			kv := hruntime.ParseTag(tag)
 			for k, v := range kv {
 				switch k {
+				case "col":
+					of.col = v
+				case "tabNaming": //分表tag
+					tabNamingFields = append(tabNamingFields, f.Name)
 				case "primary":
 					obj.primaryField = of
-				case "desc":
-					of.desc = v
 				case "require":
 					for _, v := range strings.Split(v, ",") {
 						switch strings.TrimSpace(v) {
@@ -1823,6 +1512,13 @@ func (this *Service) parseObject(o interface{}) *object {
 							of.opRequired[opUpdate] = true
 						}
 					}
+				case opDelete:
+					for _, v := range strings.Split(v, ",") {
+						switch strings.TrimSpace(v) {
+						case "require":
+							of.opRequired[opDelete] = true
+						}
+					}
 				case "key":
 					of.key = v
 				case "autoInit":
@@ -1838,39 +1534,53 @@ func (this *Service) parseObject(o interface{}) *object {
 		}
 
 		if of.key == "" {
-			of.key = gorm.ToColumnName(of.name)
+			of.key = this.getDB(obj.database).NamingStrategy.ColumnName("", of.name)
+		}
+		if of.col == "" {
+			of.col = this.getDB(obj.database).NamingStrategy.ColumnName("", of.name)
 		}
 
-		//t := f.Tag.Get("gorm")
-		//if t != "" {
-		//	kv := this.formatGormTags(hruntime.ParseTag(t))
-		//	of = this.handleGormField(fields, &f, kv, of)
-		//}
-		if of != nil {
-			obj.AddField(of)
+		of.owner = &fieldOwner{
+			object:   obj,
+			fieldKey: of.key,
+			fieldCol: of.col,
 		}
+		fieldKeyByNameMap[of.name] = of.key
+		obj.AddField(of)
 	}
 
 	if manageable {
-		obj.fieldKeysByName = make(map[string]string)
-		for _, f := range obj.fieldMap {
-			obj.fieldKeysByName[f.name] = f.key
+		db := this.getDB(obj.database)
+		obj.tableName = db.NamingStrategy.TableName(obj.name)
+
+		for _, f := range tabNamingFields {
+			obj.tabNamingFieldKeys = append(obj.tabNamingFieldKeys, fieldKeyByNameMap[f])
 		}
-		return obj
+
+		if obj.primaryField == nil {
+			f := obj.fieldMap["id"]
+			if f == nil {
+				return nil, herrors.ErrSysInternal.New("data object [%s] primary field not found", obj.key)
+			} else {
+				obj.primaryField = f
+			}
+		}
+		return obj, nil
 	}
-	return nil
+
+	return nil, herrors.ErrSysInternal.New("invalid data object [%s], not derived from DataObject", name)
 }
 
-func (this *Service) shapeObjectFieldValues(op string, objName string, vals map[string]interface{}) (map[string]interface{}, *herrors.Error) {
-	obj := this.objectsWithName[objName]
+func (this *Service) shapeObjectFieldValues(op string, objName string, vals htypes.Map) (htypes.Map, *herrors.Error) {
+	obj := this.objectsByName[objName]
 	if obj == nil {
-		return nil, herrors.ErrSysInternal.New("object is not declared as DataSource:", objName)
+		return nil, herrors.ErrSysInternal.New("object [%s] is not declared as DataObject", objName)
 	}
 
-	vs := make(map[string]interface{})
-	for k, of := range obj.fieldMap {
+	vs := make(htypes.Map)
+	for key, of := range obj.fieldMap {
 		if of.autoInitFunc != "" {
-			if vals["id"] == nil {
+			if op == opCreate {
 				vs[of.name] = this.autoFill(of.autoInitFunc, vals)
 				continue
 			}
@@ -1882,18 +1592,18 @@ func (this *Service) shapeObjectFieldValues(op string, objName string, vals map[
 			if ff == nil {
 				return nil, herrors.ErrSysInternal.New("custom field [%s] not found", of.customFunc)
 			}
-			vv, err := ff(vals[k])
+			vv, err := ff(vals[key])
 			if err != nil {
 				return nil, err
 			}
 			vs[of.name] = vv
 		}
-		if vals[k] == nil {
+		if vals[key] == nil {
 			if of.opRequired[op] {
-				return nil, herrors.ErrSysInternal.New("object field [%s] required:", of.name)
+				return nil, herrors.ErrSysInternal.New("object field [%s] required", of.key)
 			}
 		} else {
-			v := vals[k]
+			v := vals[key]
 			k := reflect.TypeOf(v).Kind()
 			if k == reflect.Struct || k == reflect.Map || k == reflect.Slice {
 				continue
@@ -1912,7 +1622,7 @@ func (this *Service) shapeObjectFieldValues(op string, objName string, vals map[
 					of.kind == reflect.Int32 || of.kind == reflect.Int64) {
 				vs[of.name] = v
 			} else if of.kind != k {
-				return nil, herrors.ErrSysInternal.New("object field [%s.%s] invalid kind", of.name, of.key)
+				return nil, herrors.ErrSysInternal.New("object field [%s.%s] invalid kind", obj.key, of.key)
 			} else {
 				vs[of.name] = v
 			}
@@ -1922,15 +1632,323 @@ func (this *Service) shapeObjectFieldValues(op string, objName string, vals map[
 	return vs, nil
 }
 
-func (this *Service) findObjectFieldKey(objName string, fieldName string) (string, *herrors.Error) {
-	obj := this.objectsWithName[objName]
-	if obj == nil {
-		return "", herrors.ErrSysInternal.New("object [%s] is not tagged as DataSource", objName)
+func (this *Service) parseJoinOn(view *view, strJoin string) (*join, *herrors.Error) {
+	var jn join
+	vv := strings.Split(strings.TrimSpace(strJoin), "@")
+	if len(vv) != 2 {
+		return nil, herrors.ErrSysInternal.New("invalid join tag of view [%s]:[%s]", view.name, strJoin)
 	}
 
-	f := obj.fieldKeysByName[fieldName]
-	if f == "" {
-		return "", herrors.ErrSysInternal.New("object field is not tagged as DataSource:%s.%s", objName, fieldName)
+	if this.objectsByKey[strings.TrimSpace(vv[0])] == nil {
+		return nil, herrors.ErrSysInternal.New("view [%s] join object [%s] not found", view.name, vv[0])
+	} else {
+		jn.object = this.objectsByKey[strings.TrimSpace(vv[0])]
+
+		vv = strings.Split(vv[1], "=")
+		if len(vv) != 2 {
+			return nil, herrors.ErrSysInternal.New("invalid view [%s] join clause [%s]", view.name, strJoin)
+		}
+
+		lefts := strings.Split(strings.TrimSpace(vv[0]), ".")
+		if len(lefts) != 2 {
+			return nil, herrors.ErrSysInternal.New("invalid view [%s] join clause [%s]", view.name, strJoin)
+		}
+		if obj := this.objectsByKey[strings.TrimSpace(lefts[0])]; obj == nil {
+			return nil, herrors.ErrSysInternal.New("object [%s] in view [%s] join clause [%s] not found", lefts[0], view.name, strJoin)
+		} else {
+			if field := obj.fieldMap[strings.TrimSpace(lefts[1])]; field == nil {
+				return nil, herrors.ErrSysInternal.New("field [%s] in view %s join clause [%s] not found", lefts[1], view.name, strJoin)
+			} else {
+				jn.on.leftObj = obj
+				jn.on.leftField = field
+			}
+		}
+
+		rights := strings.Split(strings.TrimSpace(vv[1]), ".")
+		if len(rights) != 2 {
+			return nil, herrors.ErrSysInternal.New("invalid view [%s] join clause [%s]", view.name, strJoin)
+		}
+		if obj := this.objectsByKey[strings.TrimSpace(rights[0])]; obj == nil {
+			return nil, herrors.ErrSysInternal.New("object [%s] in view [%s] join clause [%s] not found", rights[0], view.name, strJoin)
+		} else {
+			if field := obj.fieldMap[strings.TrimSpace(rights[1])]; field == nil {
+				return nil, herrors.ErrSysInternal.New("field [%s] in view [%s] join clause [%s] not found", rights[1], view.name, strJoin)
+			} else {
+				jn.on.rightObj = obj
+				jn.on.rightField = field
+			}
+		}
 	}
-	return f, nil
+
+	return &jn, nil
+}
+
+func (this *Service) parseView(o htypes.Any) (*view, *herrors.Error) {
+	vw := &view{}
+	vw.instance = o
+	vw.name = hruntime.GetObjectName(o)
+
+	manageable := false
+	t := reflect.TypeOf(o)
+	if t.Kind() == reflect.Ptr {
+		t = reflect.ValueOf(o).Elem().Type()
+	}
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		tag := f.Tag.Get("data")
+		if f.Type.Kind() == reflect.Struct && f.Type.Name() == "DataView" {
+			manageable = true
+			if tag == "" {
+				return nil, herrors.ErrSysInternal.New("view [%s] field tag  not found", vw.name)
+			} else {
+				kv := hruntime.ParseTag(tag)
+				for k, v := range kv {
+					switch k {
+					case "key":
+						if v == "" {
+							return nil, herrors.ErrSysInternal.New("view [%s] tag [key] not found", vw.name)
+						}
+						vw.key = v
+					case "from":
+						vw.from = this.objectsByKey[v]
+						if vw.from == nil {
+							return nil, herrors.ErrSysInternal.New("view [%s] join object not found:%s", vw.name, v)
+						}
+					case "join":
+						ss := strings.Split(strings.TrimSpace(v), ",")
+						for _, s := range ss {
+							join, err := this.parseJoinOn(vw, s)
+							if err != nil {
+								return nil, err
+							}
+							vw.joins = append(vw.joins, join)
+						}
+					default:
+						if v == "" {
+							vw.key = k
+						} else {
+							return nil, herrors.ErrSysInternal.New("invalid view [%s] tag [%s]", vw.name, k)
+						}
+					}
+				}
+			}
+			continue
+		}
+
+		if tag == "-" {
+			continue
+		}
+
+		vf := newViewField()
+		vf.kind = f.Type.Kind()
+		if vf.kind == reflect.Struct || vf.kind == reflect.Ptr || vf.kind == reflect.Map || vf.kind == reflect.Slice {
+			continue
+		}
+		vf.name = f.Name
+
+		if tag != "" {
+			kv := hruntime.ParseTag(tag)
+			for k, v := range kv {
+				switch k {
+				case "key":
+					vf.key = v
+				case "field":
+					err := this.parseViewField(vw, vf, v)
+					if err != nil {
+						return nil, err
+					}
+				default:
+					if v == "" {
+						vf.key = k
+					} else {
+						return nil, herrors.ErrSysInternal.New("invalid view field [%s] tag [%s]", vf.name, k)
+					}
+				}
+			}
+		}
+
+		if vf.key == "" {
+			return nil, herrors.ErrSysInternal.New("view [%s] field [%s] tag [key]  not found", vw.name, f.Name)
+		}
+
+		vw.AddField(vf)
+	}
+
+	if manageable {
+		for _, j := range vw.joins {
+			if j.object.database != vw.from.database {
+				return nil, herrors.ErrSysInternal.New(" view [%s] cross multi-databases: joined object [%s] not in the same database of from object database", vw.name, j.object.name)
+			}
+		}
+		return vw, nil
+	}
+
+	return nil, herrors.ErrSysInternal.New("invalid view [%s], not derived from DataView")
+}
+
+func (this *Service) parseViewField(view *view, f *viewField, s string) *herrors.Error {
+	ss := strings.Split(s, ".")
+	if len(ss) != 2 {
+		return herrors.ErrSysInternal.New("view [%s] has invalid field tag [%s]", view.name, s)
+	}
+
+	n := strings.TrimSpace(ss[0])
+	var obj *object
+	if obj = this.objectsByKey[n]; obj == nil {
+		return herrors.ErrSysInternal.New("view [%s] field specify invalid object key [%s]", view.name, s)
+	}
+
+	n = strings.TrimSpace(ss[1])
+	of := obj.fieldMap[n]
+	if of == nil {
+		return herrors.ErrSysInternal.New("view [%s] field specify invalid object field [%s]", view.name, s)
+	}
+	f.owner = &fieldOwner{
+		object:   obj,
+		fieldKey: of.key,
+		fieldCol: this.getDB(obj.database).NamingStrategy.ColumnName("", of.name),
+	}
+
+	return nil
+}
+
+func (this *Service) checkTableName(o *object, data htypes.Map, createIfNotExist bool) (string, *herrors.Error) {
+	tab := o.tableName
+	if len(o.tabNamingFieldKeys) == 0 {
+		return tab, nil
+	}
+
+	for _, f := range o.tabNamingFieldKeys {
+		if data[f] == nil {
+			return "", herrors.ErrSysInternal.New("table naming field [%s] value required", f)
+		} else {
+			tab = fmt.Sprintf("%s_%s%v", tab, f, data[f])
+		}
+	}
+
+	if this.tablesOfDatabases[o.database] == nil {
+		this.tablesOfDatabases[o.database] = make(map[string]bool)
+	}
+
+	if this.tablesOfDatabases[o.database][tab] != true {
+		if !this.hasTable(tab, o) {
+			if createIfNotExist {
+				if herr := this.createTable(tab, o); herr != nil {
+					return "", herr
+				}
+			}
+		}
+		this.tablesOfDatabases[o.database][tab] = true
+	}
+
+	return tab, nil
+}
+
+func (this *Service) getDB(key string) *gorm.DB {
+	if key == "" {
+		return this.defaultDB
+	} else {
+		return this.dbs[key]
+	}
+}
+
+func (this *Service) getFieldValuesSetByFilters(fs *filter) map[string] /*objKey*/ htypes.Map {
+	objFieldVals := make(map[string]htypes.Map)
+	for _, cond := range fs.conditions {
+		if cond.compare == "=" {
+			obj := cond.field.Owner().object
+			if objFieldVals[obj.key] == nil {
+				objFieldVals[obj.key] = make(htypes.Map)
+			}
+			objFieldVals[obj.key][cond.field.Owner().fieldKey] = cond.value
+		}
+	}
+
+	for _, f := range fs.filters {
+		vals := this.getFieldValuesSetByFilters(f)
+		for o, vs := range vals {
+			obj := objFieldVals[o]
+			if obj == nil {
+				objFieldVals[o] = make(htypes.Map)
+			}
+			for k, v := range vs {
+				objFieldVals[o][k] = v
+			}
+		}
+	}
+
+	return objFieldVals
+}
+
+func (this *Service) parseRawFilter(fMap map[string]iField, fs *rawFilter) (*filter, *herrors.Error) {
+	var fls *filter
+	if len(fs.Conditions) > 0 {
+		fls = &filter{
+			or: fs.Or,
+		}
+
+		for _, str := range fs.Conditions {
+			cond, herr := this.parseCondition(fMap, str)
+			if herr != nil {
+				return nil, herr
+			}
+			fls.conditions = append(fls.conditions, cond)
+		}
+
+		for _, rcf := range fs.Filters {
+			v, herr := this.parseRawFilter(fMap, &rcf)
+			if herr != nil {
+				return nil, herr
+			}
+			fls.filters = append(fls.filters, v)
+		}
+	}
+	return fls, nil
+}
+
+func (this *Service) createTable(tab string, obj *object) *herrors.Error {
+	db := this.getDB(obj.database).Session(&gorm.Session{})
+	db.Statement.Table = tab
+	if err := db.Migrator().CreateTable(obj.instance); err != nil {
+		return herrors.ErrSysInternal.New(err.Error())
+	}
+
+	return nil
+}
+
+func (this *Service) hasTable(tab string, obj *object) bool {
+	db := this.getDB(obj.database).Session(&gorm.Session{})
+	db.Statement.Table = tab
+	return db.Migrator().HasTable(obj.instance)
+}
+
+func (this *Service) checkTabNamingFieldsValue(obj *object, vals htypes.Map) *herrors.Error {
+	for _, f := range obj.tabNamingFieldKeys {
+		if vals[f] == nil {
+			return herrors.ErrUserInvalidAct.New("object [%s] table naming field [%s] required", obj.key, f)
+		}
+	}
+
+	return nil
+}
+
+func (this *Service) parseOrderBy(fldMap map[string]iField, s string) (*ordering, *herrors.Error) {
+	ss := strings.Split(s, ",")
+	if len(ss) > 2 {
+		return nil, herrors.ErrCallerInvalidRequest.New("invalid ordering parameter [%s]", s)
+	}
+
+	f := fldMap[strings.TrimSpace(ss[0])]
+	if f == nil {
+		return nil, herrors.ErrCallerInvalidRequest.New("invalid ordering parameter [%s], [%s] not found", s, ss[0])
+	}
+	order := &ordering{}
+	order.column = f.Key()
+	if len(ss) == 1 || strings.ToUpper(strings.Trim(ss[1], " ")) == "ASC" {
+		order.direction = "ASC"
+	} else {
+		order.direction = "DESC"
+	}
+
+	return order, nil
 }

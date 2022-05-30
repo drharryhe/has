@@ -1,26 +1,21 @@
 package hfilesvs
 
 import (
-	"bytes"
 	"context"
-	"fmt"
 	"os"
-	"path"
 	"reflect"
 	"strings"
 
-	"github.com/jinzhu/gorm"
 	"github.com/minio/minio-go/v7"
+	"gorm.io/gorm"
 
 	"github.com/drharryhe/has/common/hconf"
 	"github.com/drharryhe/has/common/herrors"
 	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/core"
-	"github.com/drharryhe/has/plugins/hgormplugin"
-	"github.com/drharryhe/has/utils/hconverter"
+	"github.com/drharryhe/has/plugins/hdatabaseplugin"
 	"github.com/drharryhe/has/utils/hencoder"
 	"github.com/drharryhe/has/utils/hio"
-	"github.com/drharryhe/has/utils/hrandom"
 )
 
 func New() *Service {
@@ -31,7 +26,6 @@ const (
 	repositoryDir = "./media"
 	DownloadFlag  = "FILE-DOWNLOAD"
 	PreviewFlag   = "FILE-PREVIEW"
-	FileField     = "files"
 
 	storageFS          = "fs"
 	storageMinio       = "minio"
@@ -53,13 +47,13 @@ func (this *Service) Objects() []interface{} {
 	}
 }
 
-func (this *Service) Open(s core.IServer, instance core.IService, args ...htypes.Any) *herrors.Error {
-	err := this.Service.Open(s, instance, args)
+func (this *Service) Open(s core.IServer, instance core.IService, options htypes.Any) *herrors.Error {
+	err := this.Service.Open(s, instance, options)
 	if err != nil {
 		return err
 	}
 
-	this.db, err = this.UsePlugin("GormPlugin").(*hgormplugin.Plugin).AddObjects(this.Objects())
+	this.db, err = this.UsePlugin("DatabasePlugin").(*hdatabaseplugin.Plugin).AddObjects(this.conf.DatabaseKey, this.Objects())
 	if err != nil {
 		return err
 	}
@@ -96,128 +90,12 @@ func (this *Service) Open(s core.IServer, instance core.IService, args ...htypes
 func (this *Service) EntityStub() *core.EntityStub {
 	return core.NewEntityStub(
 		&core.EntityStubOptions{
-			Owner:       this,
-			Ping:        nil,
-			GetLoad:     nil,
-			ResetConfig: nil,
+			Owner: this,
 		})
 }
 
 func (this *Service) Config() core.IEntityConf {
 	return &this.conf
-}
-
-func (this *Service) Download(ps htypes.Map, res *core.SlotResponse) {
-	p := ps["path"].(string)
-	if err := this.isValidPath(p); err != nil {
-		res.Error = err
-		return
-	}
-
-	var file SvsFile
-	if err := this.db.Where("path = ?", p).First(&file).Error; err != nil {
-		this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
-		return
-	}
-
-	var flag string
-	preview, _ := hconverter.String2Bool(fmt.Sprintf("%v", ps["preview"]))
-	if preview {
-		flag = PreviewFlag
-	} else {
-		flag = DownloadFlag
-	}
-
-	var (
-		bs  []byte
-		err error
-	)
-
-	if this.conf.Storage == storageMinio {
-		obj, err := this.minioClient.GetObject(context.TODO(), this.conf.MinioBucket, p, minio.GetObjectOptions{})
-		if err != nil {
-			this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
-			return
-		}
-
-		buf := bytes.NewBuffer(bs)
-		_, err = buf.ReadFrom(obj)
-		bs = buf.Bytes()
-	} else {
-		bs, err = hio.ReadFile(p)
-	}
-
-	if err != nil {
-		this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
-	} else {
-		ret := make(htypes.Map)
-		ret[flag] = true
-		ret["name"] = file.Name
-		ret["data"] = bs
-		this.Response(res, ret, nil)
-	}
-}
-
-func (this *Service) Upload(ps htypes.Map, res *core.SlotResponse) {
-	files := ps[FileField].([]htypes.Any)
-
-	var rep core.CallerResponse
-	if this.hook != nil {
-		for _, f := range files {
-			this.callHook(f.(htypes.Map), &rep)
-		}
-		if rep.Error != nil {
-			res.Error = rep.Error
-			return
-		}
-	}
-
-	var results []htypes.Map
-	for _, f := range files {
-		fd := f.(htypes.Map)
-		name := fd["name"].(string)
-		data := fd["data"].([]byte)
-
-		var file SvsFile
-		var fp string
-		hash := this.computeHash(data)
-		err := this.db.Where("hash = ?", hash).Find(&file).Error
-		if err == nil {
-			fp = file.Path
-		} else {
-			if this.conf.Storage == storageMinio {
-				buf := bytes.NewReader(data)
-				fp = fmt.Sprintf("%s%s", hrandom.UuidWithoutDash(), path.Ext(name))
-				_, err := this.minioClient.PutObject(context.TODO(), this.conf.MinioBucket, fp, buf, int64(len(data)), minio.PutObjectOptions{})
-				if err != nil {
-					this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
-					return
-				}
-			} else {
-				fp = fmt.Sprintf("%s/%s%s", repositoryDir, hrandom.UuidWithoutDash(), path.Ext(name))
-				if err := hio.CreateFile(fp, data); err != nil {
-					this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
-					return
-				}
-			}
-
-			file.Path = fp
-			file.Name = name
-			file.Hash = hash
-			file.Size = len(data)
-			if err := this.db.Save(&file).Error; err != nil {
-				this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
-				return
-			}
-		}
-
-		results = append(results, htypes.Map{
-			"name": name,
-			"path": fp,
-		})
-	}
-
-	res.Data = results
 }
 
 func (this *Service) mountHook(anchor interface{}) {

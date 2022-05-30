@@ -152,15 +152,15 @@ func (this *APIGateWayImplement) I18n() IAPIi18n {
 func (this *APIGateWayImplement) RequestAPI(version string, api string, params htypes.Map) (ret htypes.Any, err *herrors.Error) {
 	a := this.apiSet[version]
 	if a == nil {
-		return nil, herrors.ErrCallerInvalidRequest.New("api version %s not supported", version)
+		return nil, herrors.ErrCallerInvalidRequest.New("api version [%s] not supported", version)
 	}
 
 	v := a[api]
 	if v == nil {
-		return nil, herrors.ErrCallerInvalidRequest.New("api  %s not supported", api)
+		return nil, herrors.ErrCallerInvalidRequest.New("api  [%s] not supported", api)
 	}
 	if v.Disabled {
-		return nil, herrors.ErrCallerInvalidRequest.New("api %s disabled", api)
+		return nil, herrors.ErrCallerInvalidRequest.New("api [%s] disabled", api)
 	}
 
 	for _, m := range this.middlewares {
@@ -241,10 +241,7 @@ func (this *APIGateWayImplement) EntityMeta() *EntityMeta {
 func (this *APIGateWayImplement) EntityStub() *EntityStub {
 	return NewEntityStub(
 		&EntityStubOptions{
-			Owner:       this,
-			Ping:        nil,
-			GetLoad:     nil,
-			ResetConfig: nil,
+			Owner: this,
 		})
 }
 

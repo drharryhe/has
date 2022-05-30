@@ -1,0 +1,20 @@
+{
+  "key": "student",
+  "dims": [
+    "id"
+  ],
+  "filter": {
+    "or": true,
+    "conditions": [
+      "id > 0"
+    ],
+    "filters": [
+      {
+        "or": false,
+        "conditions": [
+          "name == harry"
+        ]
+      }
+    ]
+  }
+}

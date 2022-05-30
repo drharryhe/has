@@ -1,28 +1,46 @@
 package core
 
 import (
+	jsoniter "github.com/json-iterator/go"
+
 	"github.com/drharryhe/has/common/herrors"
 	"github.com/drharryhe/has/common/htypes"
 )
 
 type Slot struct {
-	Name     string      `json:"name"`
-	Desc     string      `json:"-"`
-	Disabled bool        `json:"disabled"`
-	Params   []SlotParam `json:"params"`
-	Lang     string      `json:"lang"`
-	Impl     string      `json:"impl"`
+	Name        string                    `json:"name"`
+	Params      map[string]*SlotParameter `json:"params"`
+	ReqInstance htypes.Any
 }
 
-type SlotParam struct {
-	Name            string       `json:"name"`
-	Desc            string       `json:"-"`
-	Format          string       `json:"-"`
-	Type            htypes.HType `json:"type"`
-	Required        bool         `json:"required"`
-	CaseInSensitive bool         `json:"case_insensitive"` //参数名是否大小写敏感
-	Validator       string       `json:"validator"`        //具体设置见：https://godoc.org/gopkg.in/go-playground/validator.v9，注意：required验证不需要，已经在Required中字段验证
-	Default         string       `json:"default"`          //缺省值，通常是从其他参数中提取值
+type ISlotRequest interface {
+	FromJSON(str string, instance interface{}) *herrors.Error
+	FromMap(data htypes.Map, ins interface{}) *herrors.Error
+}
+
+type SlotParameter struct {
+	Name            string
+	Require         bool
+	InsensitiveCase bool
+	Validate        string
+	Type            string
+}
+
+type SlotRequestBase struct {
+}
+
+func (this *SlotRequestBase) FromMap(data htypes.Map, ins interface{}) *herrors.Error {
+	bs, _ := jsoniter.Marshal(data)
+	return this.FromJSON(string(bs), ins)
+}
+
+func (this *SlotRequestBase) FromJSON(str string, instance interface{}) *herrors.Error {
+	err := jsoniter.Unmarshal([]byte(str), instance)
+	if err != nil {
+		return herrors.ErrSysInternal.New(err.Error())
+	}
+
+	return nil
 }
 
 type SlotResponse struct {

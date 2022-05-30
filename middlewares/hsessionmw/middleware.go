@@ -61,19 +61,16 @@ func (this *Middleware) Config() core.IEntityConf {
 func (this *Middleware) EntityStub() *core.EntityStub {
 	return core.NewEntityStub(
 		&core.EntityStubOptions{
-			Owner:       this,
-			Ping:        nil,
-			GetLoad:     nil,
-			ResetConfig: nil,
+			Owner: this,
 		})
 }
 
 func (this *Middleware) parseWhitelist() {
 	this.whiteList = make(map[string]map[string]bool)
-	for _, s := range this.conf.WhiteList {
+	for _, s := range this.conf.APIWhiteList {
 		kv := strings.Split(s, ":")
 		if len(kv) != 2 {
-			panic(herrors.ErrSysInternal.New("invalid %s config:%s", this.Class(), s))
+			panic(herrors.ErrSysInternal.New("[%s] invalid config [%s]", this.Class(), s))
 		}
 		if this.whiteList[kv[0]] == nil {
 			this.whiteList[kv[0]] = make(map[string]bool)

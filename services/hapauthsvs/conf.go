@@ -7,6 +7,7 @@ import (
 type ApAuthService struct {
 	core.ServiceConf
 
+	DatabaseKey            string
 	SessionService         string
 	SessionCreateSlot      string
 	SessionVerifySlot      string
@@ -24,8 +25,6 @@ type ApAuthService struct {
 	SuperPwd               string
 	SuperFails             int
 	LockAfterFails         int
-	InAddressField         string
-	InAgentField           string
 	OutAddressField        string
 	OutAgentField          string
 }

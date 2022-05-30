@@ -95,10 +95,7 @@ func (this *Middleware) Config() core.IEntityConf {
 func (this *Middleware) EntityStub() *core.EntityStub {
 	return core.NewEntityStub(
 		&core.EntityStubOptions{
-			Owner:       this,
-			Ping:        nil,
-			GetLoad:     nil,
-			ResetConfig: nil,
+			Owner: this,
 		})
 }
 

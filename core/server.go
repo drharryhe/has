@@ -83,8 +83,6 @@ func (this *ServerImplement) EntityStub() *EntityStub {
 	return NewEntityStub(
 		&EntityStubOptions{
 			Owner:       this,
-			Ping:        nil,
-			GetLoad:     nil,
 			ResetConfig: this.resetConfig,
 		})
 }
@@ -173,16 +171,16 @@ func (this *ServerImplement) Shutdown() {
 	this.quitSignal <- syscall.SIGQUIT
 }
 
-func (this *ServerImplement) RegisterService(service IService, args ...htypes.Any) {
+func (this *ServerImplement) RegisterService(service IService, options htypes.Any) {
 	var herr *herrors.Error
 
 	if entity, ok := service.(IEntity); !ok {
-		herr = herrors.ErrSysInternal.New("Plugin %s not implement IEntity interface", hruntime.GetObjectName(service))
+		herr = herrors.ErrSysInternal.New("plugin [%s] not implement IEntity interface", hruntime.GetObjectName(service))
 		goto panic
 	} else {
 		hconf.Load(entity.Config())
 
-		if herr = service.Open(this, service, args); herr != nil {
+		if herr = service.Open(this, service, options); herr != nil {
 			goto panic
 		}
 
