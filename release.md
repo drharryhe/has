@@ -2,9 +2,12 @@
 
 ## Release Note
 
-### v1.0.5
+### v1.1.0
 
-*
+* 修改Service Slot定义格式
+* 升级GormPlugin为DatabasePlugin，支持多数据库连接
+* 升级DataService，支持分表存储及查询，支持视图查询
+* 其他修改
 
 ## Roadmap
 
