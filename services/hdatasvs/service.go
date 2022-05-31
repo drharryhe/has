@@ -1882,6 +1882,10 @@ func (this *Service) getDB(key string) *gorm.DB {
 
 func (this *Service) getFieldValuesSetByFilters(fs *filter) map[string] /*objKey*/ htypes.Map {
 	objFieldVals := make(map[string]htypes.Map)
+	if fs == nil {
+		return objFieldVals
+	}
+
 	for _, cond := range fs.conditions {
 		if cond.compare == "=" {
 			obj := cond.field.Owner().object

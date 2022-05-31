@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/driver/clickhouse"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 
@@ -73,6 +74,10 @@ func (this *Plugin) DefaultDB() *gorm.DB {
 	return this.dbs[0]
 }
 
+func (this *Plugin) DB(key string) *gorm.DB {
+	return this.dbMap[key]
+}
+
 func (this *Plugin) AddObjectsToDefaultDB(objs []interface{}) (*gorm.DB, *herrors.Error) {
 	return this.AddObjects(defaultDBKey, objs)
 }
@@ -128,7 +133,9 @@ func (this *Plugin) AutoMigrate(key string, objs []interface{}) (*gorm.DB, *herr
 
 	switch conn.Type {
 	case dbTypeClickhouse:
-		//TODO
+		if err := db.AutoMigrate(objs...); err != nil {
+			return nil, herrors.ErrSysInternal.New(err.Error())
+		}
 	default:
 		if err := db.Set("gorm:table_options", "ENGINE=InnoDB").AutoMigrate(objs...); err != nil {
 			return nil, herrors.ErrSysInternal.New(err.Error())
@@ -178,9 +185,6 @@ LOOP:
 			shouldCreateDB = false
 		}
 		break
-	case dbTypeSqlLite:
-		break
-	case dbTypePostgres:
 	case dbTypeClickhouse:
 		if conn.ReadTimeout == 0 {
 			conn.ReadTimeout = defaultReadTimeout
@@ -191,7 +195,7 @@ LOOP:
 
 		dsn := fmt.Sprintf("tcp://%s:%ddatabase=%s&username=%s&password=%s&read_timeout=%d&write_timeout=%d",
 			conn.Server, conn.Port, conn.Name, conn.User, conn.Pwd, conn.ReadTimeout, conn.WriteTimeout)
-		db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
+		db, err = gorm.Open(clickhouse.Open(dsn), &gorm.Config{})
 		if err != nil {
 			if strings.Index(err.Error(), "1049") < 0 || shouldCreateDB {
 				return nil, herrors.ErrSysInternal.New(err.Error()).D("failed to open Plugin")

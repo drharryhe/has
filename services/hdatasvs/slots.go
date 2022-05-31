@@ -18,8 +18,6 @@ type CreateRequest struct {
 
 	Key    *string     `json:"key" param:"require"`
 	Object *htypes.Map `json:"object" param:"require"`
-
-	Fields htypes.Map `param:"-"`
 }
 
 func (this *Service) Create(req *CreateRequest, res *core.SlotResponse) {
@@ -50,16 +48,9 @@ func (this *Service) Create(req *CreateRequest, res *core.SlotResponse) {
 		}
 	}
 
-	vs, err := this.shapeObjectFieldValues(opCreate, o.name, *req.Object)
-	if err != nil {
-		this.Response(res, nil, err)
-		return
-	}
-
 	if hook := this.beforeCreateHookNames[*req.Key]; hook != "" {
 		reply := core.CallerResponse{}
 		stop := false
-		req.Fields = vs
 		this.callBeforeCreateHook(hook, req, &reply, &stop)
 		if reply.Error != nil {
 			this.Response(res, nil, reply.Error)
@@ -69,6 +60,12 @@ func (this *Service) Create(req *CreateRequest, res *core.SlotResponse) {
 			this.Response(res, reply.Data, reply.Error)
 			return
 		}
+	}
+
+	vs, err := this.shapeObjectFieldValues(opCreate, o.name, *req.Object)
+	if err != nil {
+		this.Response(res, nil, err)
+		return
 	}
 
 	ins := hruntime.CloneObject(o.instance)
@@ -90,6 +87,7 @@ func (this *Service) Create(req *CreateRequest, res *core.SlotResponse) {
 
 	if hook := this.afterCreateHookNames[*req.Key]; hook != "" {
 		reply := core.CallerResponse{}
+		req.Object = &vs
 		this.callAfterCreateHook(hook, req, &reply)
 		this.Response(res, reply.Data, reply.Error)
 	} else {
@@ -109,6 +107,31 @@ func (this *Service) CreateM(req *CreateMRequest, res *core.SlotResponse) {
 	if o == nil {
 		this.Response(res, nil, herrors.ErrSysInternal.New("key [%s] not found", *req.Key).D("failed to create data"))
 		return
+	}
+
+	if o.deniedOperations[opCreate] {
+		this.Response(res, nil, herrors.ErrUserUnauthorizedAct.New("object [%s] cannot be created", *req.Key).D("failed to create data"))
+		return
+	}
+
+	createReq := &CreateRequest{
+		Key: req.Key,
+	}
+	if hook := this.beforeCreateHookNames[*req.Key]; hook != "" {
+		reply := core.CallerResponse{}
+		stop := false
+		for _, obj := range *req.Objects {
+			createReq.Object = &obj
+			this.callBeforeCreateHook(hook, createReq, &reply, &stop)
+			if reply.Error != nil {
+				this.Response(res, nil, reply.Error)
+				return
+			}
+			if stop {
+				this.Response(res, reply.Data, reply.Error)
+				return
+			}
+		}
 	}
 
 	var vss []htypes.Map
@@ -135,33 +158,7 @@ func (this *Service) CreateM(req *CreateMRequest, res *core.SlotResponse) {
 		instancesByTabName[tabName] = append(instancesByTabName[tabName], ins)
 	}
 
-	if o.deniedOperations[opCreate] {
-		this.Response(res, nil, herrors.ErrUserUnauthorizedAct.New("object [%s] cannot be created", *req.Key).D("failed to create data"))
-		return
-	}
-
 	var ids []htypes.Any
-	createReq := &CreateRequest{
-		Key: req.Key,
-	}
-	if hook := this.beforeCreateHookNames[*req.Key]; hook != "" {
-		reply := core.CallerResponse{}
-		stop := false
-		for i, vs := range vss {
-			createReq.Object = &(*req.Objects)[i]
-			createReq.Fields = vs
-			this.callBeforeCreateHook(hook, createReq, &reply, &stop)
-			if reply.Error != nil {
-				this.Response(res, nil, reply.Error)
-				return
-			}
-			if stop {
-				this.Response(res, reply.Data, reply.Error)
-				return
-			}
-		}
-	}
-
 	for tab, instances := range instancesByTabName {
 		if err := this.getDB(o.database).Table(tab).Create(instances).Error; err != nil {
 			if strings.Index(err.Error(), "Error 1062") >= 0 {
@@ -178,9 +175,8 @@ func (this *Service) CreateM(req *CreateMRequest, res *core.SlotResponse) {
 
 	if hook := this.afterCreateHookNames[*req.Key]; hook != "" {
 		reply := core.CallerResponse{}
-		for i, vs := range vss {
-			createReq.Object = &(*req.Objects)[i]
-			createReq.Fields = vs
+		for _, vs := range vss {
+			createReq.Object = &vs
 			this.callAfterCreateHook(hook, createReq, &reply)
 			if reply.Error != nil {
 				this.Response(res, nil, reply.Error)
@@ -197,8 +193,6 @@ type UpdateRequest struct {
 
 	Key   *string     `json:"key" param:"require"`
 	Value *htypes.Map `json:"value" param:"require"`
-
-	Fields htypes.Map `param:"-"`
 }
 
 func (this *Service) Update(req *UpdateRequest, res *core.SlotResponse) {
@@ -242,7 +236,6 @@ func (this *Service) Update(req *UpdateRequest, res *core.SlotResponse) {
 		this.Response(res, nil, herrors.ErrCallerInvalidRequest.New("valid updated field values not found"))
 		return
 	}
-	req.Fields = vs
 
 	if hook := this.beforeUpdateHookNames[*req.Key]; hook != "" {
 		reply := core.CallerResponse{}
@@ -271,6 +264,7 @@ func (this *Service) Update(req *UpdateRequest, res *core.SlotResponse) {
 
 	if hook := this.afterUpdateHookNames[*req.Key]; hook != "" {
 		reply := core.CallerResponse{}
+		req.Value = &vs
 		this.callAfterUpdateHook(hook, req, &reply)
 		this.Response(res, reply.Data, reply.Error)
 	} else {
