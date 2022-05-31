@@ -151,6 +151,34 @@ func (this *Service) Config() core.IEntityConf {
 	return &this.conf
 }
 
+func (this *Service) QueryConditionValues(key string, conds []string) (htypes.Map, *herrors.Error) {
+	obj := this.objectsByKey[key]
+	ret := make(htypes.Map)
+	for _, cond := range conds {
+		c, herr := this.parseCondition(obj.iFieldMap, cond)
+		if herr != nil {
+			return nil, herr
+		}
+		ret[key] = c.value
+	}
+
+	return ret, nil
+}
+
+func (this *Service) ViewConditionValues(key string, conds []string) (htypes.Map, *herrors.Error) {
+	vw := this.viewsWithKey[key]
+	ret := make(htypes.Map)
+	for _, cond := range conds {
+		c, herr := this.parseCondition(vw.iFieldMap, cond)
+		if herr != nil {
+			return nil, herr
+		}
+		ret[key] = c.value
+	}
+
+	return ret, nil
+}
+
 func (this *Service) buildWhereClause(fs *filter) (string, []interface{}, *herrors.Error) {
 	logic := "AND"
 	var (

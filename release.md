@@ -13,7 +13,6 @@
 
 ### Pipeline
 
-* slots参数定义对象化，以取代现在的json文件
 * 支持配置Server RPCX序列化方式 none/json/protobuf/thrift
 * 分布式事务（DT）
 * 配套AdminWeb 服务
@@ -51,7 +50,7 @@
     - 功能测试
 
 ### Done
-
+* slots参数定义对象化，以取代现在的json文件 @ 2022.5
 * 基于redis的路由机制 @2022.5
 * 支持API版本号 @2021.6
 * 支持服务对插件的依赖声明和检查 @2021.6
