@@ -539,9 +539,9 @@ func (this *Service) Query(req *QueryRequest, res *core.SlotResponse) {
 				"total": total,
 			}
 			if data == nil || reflect.ValueOf(data).IsNil() {
-				resData["data"] = []interface{}{}
+				resData["records"] = []interface{}{}
 			} else {
-				resData["data"] = records
+				resData["records"] = records
 			}
 			this.Response(res, resData, nil)
 		}
@@ -731,9 +731,9 @@ func (this *Service) View(req *QueryRequest, res *core.SlotResponse) {
 				"total": total,
 			}
 			if data == nil || reflect.ValueOf(data).IsNil() {
-				resData["data"] = []interface{}{}
+				resData["records"] = []interface{}{}
 			} else {
-				resData["data"] = data
+				resData["records"] = data
 			}
 			this.Response(res, resData, nil)
 		}
