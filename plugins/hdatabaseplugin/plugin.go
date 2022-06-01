@@ -231,7 +231,15 @@ func (this *Plugin) createDatabase(conn *connection) *herrors.Error {
 	}
 	defer db.Close()
 
-	_, err = db.Exec(fmt.Sprintf("CREATE DATABASE `%s` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;", conn.Name))
+	switch conn.Type {
+	case dbTypeMysql:
+		_, err = db.Exec(fmt.Sprintf("CREATE DATABASE `%s` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;", conn.Name))
+	case dbTypeClickhouse:
+		_, err = db.Exec(fmt.Sprintf("CREATE DATABASE `%s`", conn.Name))
+	default:
+		return herrors.ErrSysInternal.New("unsupported database type")
+	}
+
 	if err != nil {
 		return herrors.ErrSysInternal.New(err.Error()).D("failed to create database")
 	}
