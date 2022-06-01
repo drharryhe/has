@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/driver/clickhouse"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 
@@ -73,6 +74,10 @@ func (this *Plugin) DefaultDB() *gorm.DB {
 	return this.dbs[0]
 }
 
+func (this *Plugin) DB(key string) *gorm.DB {
+	return this.dbMap[key]
+}
+
 func (this *Plugin) AddObjectsToDefaultDB(objs []interface{}) (*gorm.DB, *herrors.Error) {
 	return this.AddObjects(defaultDBKey, objs)
 }
@@ -128,7 +133,9 @@ func (this *Plugin) AutoMigrate(key string, objs []interface{}) (*gorm.DB, *herr
 
 	switch conn.Type {
 	case dbTypeClickhouse:
-		//TODO
+		if err := db.AutoMigrate(objs...); err != nil {
+			return nil, herrors.ErrSysInternal.New(err.Error())
+		}
 	default:
 		if err := db.Set("gorm:table_options", "ENGINE=InnoDB").AutoMigrate(objs...); err != nil {
 			return nil, herrors.ErrSysInternal.New(err.Error())
@@ -162,13 +169,7 @@ LOOP:
 	var db *gorm.DB
 	switch conn.Type {
 	case dbTypeMysql:
-		dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=true&loc=Local",
-			conn.User,
-			conn.Pwd,
-			conn.Server,
-			conn.Port,
-			conn.Name)
-		db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
+		db, err = gorm.Open(mysql.Open(this.Dsn(conn)), &gorm.Config{})
 		if err != nil {
 			if strings.Index(err.Error(), "1049") < 0 || shouldCreateDB {
 				return nil, herrors.ErrSysInternal.New(err.Error()).D("failed to open Plugin")
@@ -178,9 +179,6 @@ LOOP:
 			shouldCreateDB = false
 		}
 		break
-	case dbTypeSqlLite:
-		break
-	case dbTypePostgres:
 	case dbTypeClickhouse:
 		if conn.ReadTimeout == 0 {
 			conn.ReadTimeout = defaultReadTimeout
@@ -189,9 +187,7 @@ LOOP:
 			conn.WriteTimeout = defaultWriteTimeout
 		}
 
-		dsn := fmt.Sprintf("tcp://%s:%ddatabase=%s&username=%s&password=%s&read_timeout=%d&write_timeout=%d",
-			conn.Server, conn.Port, conn.Name, conn.User, conn.Pwd, conn.ReadTimeout, conn.WriteTimeout)
-		db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
+		db, err = gorm.Open(clickhouse.Open(this.Dsn(conn)), &gorm.Config{})
 		if err != nil {
 			if strings.Index(err.Error(), "1049") < 0 || shouldCreateDB {
 				return nil, herrors.ErrSysInternal.New(err.Error()).D("failed to open Plugin")
@@ -229,8 +225,7 @@ LOOP:
 }
 
 func (this *Plugin) createDatabase(conn *connection) *herrors.Error {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8", conn.User, conn.Pwd, conn.Server, conn.Port, conn.Type)
-	db, err := sql.Open(conn.Type, dsn)
+	db, err := sql.Open(conn.Type, this.Dsn(conn))
 	if err != nil {
 		return herrors.ErrSysInternal.New(err.Error()).D("failed to create database")
 	}
@@ -244,8 +239,7 @@ func (this *Plugin) createDatabase(conn *connection) *herrors.Error {
 }
 
 func (this *Plugin) dropDatabase(conn *connection) *herrors.Error {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8", conn.User, conn.Pwd, conn.Server, conn.Port, conn.Type)
-	db, err := sql.Open(conn.Type, dsn)
+	db, err := sql.Open(conn.Type, this.Dsn(conn))
 	if err != nil {
 		return herrors.ErrSysInternal.New(err.Error()).D("failed to drop database")
 	}
@@ -372,4 +366,15 @@ func (this *Plugin) updateConfigItems(params htypes.Map) *herrors.Error {
 	}
 
 	return nil
+}
+
+func (this *Plugin) Dsn(conn *connection) string {
+	switch conn.Type {
+	case dbTypeClickhouse:
+		return fmt.Sprintf("tcp://%s:%ddatabase=%s&username=%s&password=%s&read_timeout=%d&write_timeout=%d",
+			conn.Server, conn.Port, conn.Name, conn.User, conn.Pwd, conn.ReadTimeout, conn.WriteTimeout)
+	default:
+		return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=true&loc=Local",
+			conn.User, conn.Pwd, conn.Server, conn.Port, conn.Name)
+	}
 }
