@@ -179,6 +179,18 @@ func (this *Service) ViewConditionValues(key string, conds []string) (htypes.Map
 	return ret, nil
 }
 
+func (this *Service) DbOfObject(key string) *gorm.DB {
+	obj := this.objectsByKey[key]
+	if obj == nil {
+		return nil
+	}
+	if key == "" {
+		return this.defaultDB
+	} else {
+		return this.dbs[obj.key]
+	}
+}
+
 func (this *Service) buildWhereClause(fs *filter) (string, []interface{}, *herrors.Error) {
 	logic := "AND"
 	var (
@@ -851,7 +863,7 @@ func (this *Service) mountBeforeCreateHook(anchor htypes.Any) {
 			continue
 		}
 
-		this.beforeCreateHookCallers[method.Name] = &core.MethodCaller{val, method.Func}
+		this.beforeCreateHookCallers[method.Name] = &core.MethodCaller{Object: val, Handler: method.Func}
 	}
 }
 
@@ -897,7 +909,7 @@ func (this *Service) mountAfterCreateHook(anchor htypes.Any) {
 			continue
 		}
 
-		this.afterCreateHookCallers[method.Name] = &core.MethodCaller{val, method.Func}
+		this.afterCreateHookCallers[method.Name] = &core.MethodCaller{Object: val, Handler: method.Func}
 	}
 }
 
@@ -1050,7 +1062,7 @@ func (this *Service) mountBeforeDelHook(anchor htypes.Any) {
 			continue
 		}
 
-		this.beforeDelHookCallers[method.Name] = &core.MethodCaller{val, method.Func}
+		this.beforeDelHookCallers[method.Name] = &core.MethodCaller{Object: val, Handler: method.Func}
 	}
 }
 
@@ -1385,7 +1397,6 @@ func (this *Service) getObjectFieldValue(obj interface{}, f string) interface{} 
 		return val.Int()
 	case reflect.String:
 		return val.String()
-		break
 	case reflect.Bool:
 		return val.Bool()
 	}
@@ -1425,6 +1436,17 @@ func (this *Service) parseObject(name string, o interface{}) (*object, *herrors.
 		f := t.Field(i)
 		tag := f.Tag.Get("data")
 
+		var hookNames struct {
+			beforeCreate string
+			afterCreate  string
+			beforeUpdate string
+			afterUpdate  string
+			beforeDelete string
+			afterDelete  string
+			beforeQuery  string
+			afterQuery   string
+		}
+
 		if f.Type.Kind() == reflect.Struct && f.Type.Name() == "DataObject" {
 			obj.deniedOperations = make(map[string]bool)
 			manageable = true
@@ -1445,21 +1467,21 @@ func (this *Service) parseObject(name string, o interface{}) (*object, *herrors.
 							obj.deniedOperations[s] = true
 						}
 					case "afterUpdate":
-						this.afterUpdateHookNames[obj.key] = v
+						hookNames.afterUpdate = v
 					case "beforeUpdate":
-						this.beforeUpdateHookNames[obj.key] = v
+						hookNames.beforeUpdate = v
 					case "beforeCreate":
-						this.beforeCreateHookNames[obj.key] = v
+						hookNames.beforeCreate = v
 					case "afterCreate":
-						this.afterCreateHookNames[obj.key] = v
+						hookNames.afterCreate = v
 					case "beforeQuery":
-						this.beforeQueryHookNames[obj.key] = v
+						hookNames.beforeQuery = v
 					case "afterQuery":
-						this.afterQueryHookNames[obj.key] = v
+						hookNames.afterQuery = v
 					case "beforeDelete":
-						this.beforeDelHookNames[obj.key] = v
+						hookNames.beforeDelete = v
 					case "afterDelete":
-						this.afterDelHookNames[obj.key] = v
+						hookNames.afterDelete = v
 					}
 				}
 
@@ -1467,6 +1489,25 @@ func (this *Service) parseObject(name string, o interface{}) (*object, *herrors.
 					obj.key = this.getDB(obj.database).NamingStrategy.TableName(obj.name)
 				} else {
 					obj.key = key
+				}
+
+				if hookNames.beforeCreate != "" {
+					this.beforeCreateHookNames[obj.key] = hookNames.beforeCreate
+				}
+				if hookNames.afterCreate != "" {
+					this.afterCreateHookNames[obj.key] = hookNames.afterCreate
+				}
+				if hookNames.beforeUpdate != "" {
+					this.beforeUpdateHookNames[obj.key] = hookNames.beforeUpdate
+				}
+				if hookNames.afterUpdate != "" {
+					this.afterUpdateHookNames[obj.key] = hookNames.afterUpdate
+				}
+				if hookNames.beforeDelete != "" {
+					this.beforeDelHookNames[obj.key] = hookNames.beforeDelete
+				}
+				if hookNames.afterDelete != "" {
+					this.afterDelHookNames[obj.key] = hookNames.afterDelete
 				}
 			}
 			continue
