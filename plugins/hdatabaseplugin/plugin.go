@@ -169,7 +169,7 @@ LOOP:
 	var db *gorm.DB
 	switch conn.Type {
 	case dbTypeMysql:
-		db, err = gorm.Open(mysql.Open(this.Dsn(conn)), &gorm.Config{})
+		db, err = gorm.Open(mysql.Open(this.Dsn(conn, false)), &gorm.Config{})
 		if err != nil {
 			if strings.Index(err.Error(), "1049") < 0 || shouldCreateDB {
 				return nil, herrors.ErrSysInternal.New(err.Error()).D("failed to open Plugin")
@@ -187,7 +187,7 @@ LOOP:
 			conn.WriteTimeout = defaultWriteTimeout
 		}
 
-		db, err = gorm.Open(clickhouse.Open(this.Dsn(conn)), &gorm.Config{})
+		db, err = gorm.Open(clickhouse.Open(this.Dsn(conn, false)), &gorm.Config{})
 		if err != nil {
 			if strings.Index(err.Error(), "1049") < 0 || shouldCreateDB {
 				return nil, herrors.ErrSysInternal.New(err.Error()).D("failed to open Plugin")
@@ -225,7 +225,7 @@ LOOP:
 }
 
 func (this *Plugin) createDatabase(conn *connection) *herrors.Error {
-	db, err := sql.Open(conn.Type, this.Dsn(conn))
+	db, err := sql.Open(conn.Type, this.Dsn(conn, true))
 	if err != nil {
 		return herrors.ErrSysInternal.New(err.Error()).D("failed to create database")
 	}
@@ -239,17 +239,14 @@ func (this *Plugin) createDatabase(conn *connection) *herrors.Error {
 }
 
 func (this *Plugin) dropDatabase(conn *connection) *herrors.Error {
-	db, err := sql.Open(conn.Type, this.Dsn(conn))
+	db, err := sql.Open(conn.Type, this.Dsn(conn, true))
 	if err != nil {
 		return herrors.ErrSysInternal.New(err.Error()).D("failed to drop database")
 	}
 	defer db.Close()
 
-	_, err = db.Exec(fmt.Sprintf("DROP DATABASE `%s`;", conn.Name))
+	_, err = db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS `%s`;", conn.Name))
 	if err != nil {
-		if strings.Index(err.Error(), "1008") > 0 {
-			return nil
-		}
 		return herrors.ErrSysInternal.New(err.Error()).D("failed to drop database")
 	}
 	return nil
@@ -368,13 +365,25 @@ func (this *Plugin) updateConfigItems(params htypes.Map) *herrors.Error {
 	return nil
 }
 
-func (this *Plugin) Dsn(conn *connection) string {
+func (this *Plugin) Dsn(conn *connection, new bool) string {
 	switch conn.Type {
 	case dbTypeClickhouse:
-		return fmt.Sprintf("tcp://%s:%ddatabase=%s&username=%s&password=%s&read_timeout=%d&write_timeout=%d",
-			conn.Server, conn.Port, conn.Name, conn.User, conn.Pwd, conn.ReadTimeout, conn.WriteTimeout)
+		if new {
+			return fmt.Sprintf("tcp://%s:%d?database=default&username=%s&password=%s&read_timeout=%d&write_timeout=%d",
+				conn.Server, conn.Port, conn.User, conn.Pwd, conn.ReadTimeout, conn.WriteTimeout)
+
+		} else {
+			return fmt.Sprintf("tcp://%s:%d?database=%s&username=%s&password=%s&read_timeout=%d&write_timeout=%d",
+				conn.Server, conn.Port, conn.Name, conn.User, conn.Pwd, conn.ReadTimeout, conn.WriteTimeout)
+		}
 	default:
-		return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=true&loc=Local",
-			conn.User, conn.Pwd, conn.Server, conn.Port, conn.Name)
+		if new {
+			return fmt.Sprintf("%s:%s@tcp(%s:%d)/",
+				conn.User, conn.Pwd, conn.Server, conn.Port)
+		} else {
+			return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=true&loc=Local",
+				conn.User, conn.Pwd, conn.Server, conn.Port, conn.Name)
+
+		}
 	}
 }
