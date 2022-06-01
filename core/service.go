@@ -9,7 +9,6 @@ import (
 
 	"github.com/drharryhe/has/common/hconf"
 	"github.com/drharryhe/has/common/herrors"
-	"github.com/drharryhe/has/common/hlogger"
 	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/utils/hconverter"
 	"github.com/drharryhe/has/utils/hrandom"
@@ -357,7 +356,6 @@ func (this *Service) parseRequestParameters(request reflect.Type, slot *Slot) *h
 		}
 
 		if f.Type.Kind() != reflect.Ptr {
-			hlogger.Info("service [%s] slot parameter [%s] not Ptr and ignored", this.Name(), f.Name)
 			continue
 		}
 
