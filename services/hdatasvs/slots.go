@@ -52,12 +52,8 @@ func (this *Service) Create(req *CreateRequest, res *core.SlotResponse) {
 		reply := core.CallerResponse{}
 		stop := false
 		this.callBeforeCreateHook(hook, req, &reply, &stop)
-		if reply.Error != nil {
+		if reply.Error != nil && stop {
 			this.Response(res, nil, reply.Error)
-			return
-		}
-		if stop {
-			this.Response(res, reply.Data, reply.Error)
 			return
 		}
 	}
@@ -191,8 +187,9 @@ func (this *Service) CreateM(req *CreateMRequest, res *core.SlotResponse) {
 type UpdateRequest struct {
 	core.SlotRequestBase
 
-	Key   *string     `json:"key" param:"require"`
-	Value *htypes.Map `json:"value" param:"require"`
+	Key    *string     `json:"key" param:"require"`
+	Filter *rawFilter  `json:"filter" param:"require"`
+	Value  *htypes.Map `json:"value" param:"require"`
 }
 
 func (this *Service) Update(req *UpdateRequest, res *core.SlotResponse) {
@@ -206,27 +203,47 @@ func (this *Service) Update(req *UpdateRequest, res *core.SlotResponse) {
 		return
 	}
 
-	if (*req.Value)[o.primaryField.key] == nil {
-		this.Response(res, nil, herrors.ErrSysInternal.New("primary field [%s] required", o.primaryField.key))
-		return
-	}
-	tableName, herr := this.checkTableName(o, *req.Value, false)
-	if herr != nil {
-		this.Response(res, nil, herr)
-		return
-	}
-
 	//检查字段权限
 	for k := range *req.Value {
 		f := o.fieldMap[k]
 		if f != nil {
-			if f.opDenies[opUpdate] {
+			if f.opDenies[opUpdate] || o.primaryField.key == f.key {
 				this.Response(res, nil, herrors.ErrCallerUnauthorizedAccess.New("field [%s] of object [%s] cannot be updated", k, *req.Key))
 				return
 			}
 		}
 	}
 
+	//处理filters
+	filters, herr := this.parseRawFilter(o.iFieldMap, req.Filter)
+	if herr != nil {
+		this.Response(res, nil, herr)
+		return
+	}
+	filtersSetValues := this.getFieldValuesSetByFilters(filters)
+	if filtersSetValues == nil || filtersSetValues[o.key] == nil || filtersSetValues[o.key][o.primaryField.key] == nil {
+		this.Response(res, nil, herrors.ErrSysInternal.New("primary field [%s] required", o.primaryField.key))
+		return
+	}
+
+	tableName, herr := this.checkTableName(o, filtersSetValues[o.key], false)
+	if herr != nil {
+		this.Response(res, nil, herr)
+		return
+	}
+
+	//处理where子句
+	var where string
+	var vals []interface{}
+	if filters != nil {
+		where, vals, herr = this.buildWhereClause(filters)
+		if herr != nil {
+			this.Response(res, nil, herr)
+			return
+		}
+	}
+
+	//提取Update的值
 	vs, err := this.shapeObjectFieldValues(opUpdate, o.name, *req.Value)
 	if err != nil {
 		this.Response(res, nil, err)
@@ -241,12 +258,8 @@ func (this *Service) Update(req *UpdateRequest, res *core.SlotResponse) {
 		reply := core.CallerResponse{}
 		stop := false
 		this.callBeforeUpdateHook(hook, req, &reply, &stop)
-		if reply.Error != nil {
+		if reply.Error != nil && stop {
 			this.Response(res, nil, reply.Error)
-			return
-		}
-		if stop {
-			this.Response(res, reply.Data, reply.Error)
 			return
 		}
 	}
@@ -257,7 +270,7 @@ func (this *Service) Update(req *UpdateRequest, res *core.SlotResponse) {
 	}
 
 	//执行update
-	if err := this.getDB(o.database).Table(tableName).Where(fmt.Sprintf("`%s` = ?", o.primaryField.col), vs[o.primaryField.name]).Updates(values).Error; err != nil {
+	if err := this.getDB(o.database).Table(tableName).Where(where, vals...).Updates(values).Error; err != nil {
 		this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
 		return
 	}
@@ -269,31 +282,6 @@ func (this *Service) Update(req *UpdateRequest, res *core.SlotResponse) {
 		this.Response(res, reply.Data, reply.Error)
 	} else {
 		this.Response(res, nil, nil)
-	}
-}
-
-type UpdateMRequest struct {
-	core.SlotRequestBase
-
-	Key    *string       `json:"key" param:"require"`
-	Values *[]htypes.Map `json:"value" param:"require"`
-}
-
-func (this *Service) UpdateM(req *UpdateMRequest, res *core.SlotResponse) {
-	o := this.objectsByKey[*req.Key]
-	if o == nil {
-		this.Response(res, nil, herrors.ErrSysInternal.New("key [%s] not found:", *req.Key))
-		return
-	}
-
-	for _, vals := range *req.Values {
-		this.Update(&UpdateRequest{
-			Key:   req.Key,
-			Value: &vals,
-		}, res)
-		if res.Error != nil {
-			return
-		}
 	}
 }
 
@@ -320,12 +308,8 @@ func (this *Service) Delete(req *DeleteRequest, res *core.SlotResponse) {
 		reply := core.CallerResponse{}
 		stop := false
 		this.callBeforeDelHook(hook, req, &reply, &stop)
-		if reply.Error != nil {
+		if reply.Error != nil && stop {
 			this.Response(res, nil, reply.Error)
-			return
-		}
-		if stop {
-			this.Response(res, reply.Data, reply.Error)
 			return
 		}
 	}
@@ -470,12 +454,8 @@ func (this *Service) Query(req *QueryRequest, res *core.SlotResponse) {
 		reply := core.CallerResponse{}
 		stop := false
 		this.callBeforeQueryHook(hook, req, &reply, &stop)
-		if reply.Error != nil {
+		if reply.Error != nil && stop {
 			this.Response(res, nil, reply.Error)
-			return
-		}
-		if stop {
-			this.Response(res, reply.Data, reply.Error)
 			return
 		}
 	}
