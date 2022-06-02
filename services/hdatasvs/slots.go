@@ -27,7 +27,7 @@ func (this *Service) Create(req *CreateRequest, res *core.SlotResponse) {
 		return
 	}
 
-	tabName, herr := this.checkTableName(o, *req.Object, true)
+	tabName, herr := this.CheckTableName(o, *req.Object, true)
 	if herr != nil {
 		this.Response(res, nil, herr)
 		return
@@ -48,20 +48,23 @@ func (this *Service) Create(req *CreateRequest, res *core.SlotResponse) {
 		}
 	}
 
-	if hook := this.beforeCreateHookNames[*req.Key]; hook != "" {
-		reply := core.CallerResponse{}
-		stop := false
-		this.callBeforeCreateHook(hook, req, &reply, &stop)
-		if reply.Error != nil && stop {
-			this.Response(res, nil, reply.Error)
-			return
-		}
-	}
-
 	vs, err := this.shapeObjectFieldValues(opCreate, o.name, *req.Object)
 	if err != nil {
 		this.Response(res, nil, err)
 		return
+	}
+
+	if hook := this.beforeCreateHookNames[*req.Key]; hook != "" {
+		reply := core.CallerResponse{}
+		stop := false
+		this.callBeforeCreateHook(hook, &CreateRequest{
+			Key:    req.Key,
+			Object: &vs,
+		}, &reply, &stop)
+		if reply.Error != nil && stop {
+			this.Response(res, nil, reply.Error)
+			return
+		}
 	}
 
 	ins := hruntime.CloneObject(o.instance)
@@ -110,30 +113,10 @@ func (this *Service) CreateM(req *CreateMRequest, res *core.SlotResponse) {
 		return
 	}
 
-	createReq := &CreateRequest{
-		Key: req.Key,
-	}
-	if hook := this.beforeCreateHookNames[*req.Key]; hook != "" {
-		reply := core.CallerResponse{}
-		stop := false
-		for _, obj := range *req.Objects {
-			createReq.Object = &obj
-			this.callBeforeCreateHook(hook, createReq, &reply, &stop)
-			if reply.Error != nil {
-				this.Response(res, nil, reply.Error)
-				return
-			}
-			if stop {
-				this.Response(res, reply.Data, reply.Error)
-				return
-			}
-		}
-	}
-
 	var vss []htypes.Map
 	instancesByTabName := make(map[string][]htypes.Any)
 	for _, vals := range *req.Objects {
-		tabName, herr := this.checkTableName(o, vals, true)
+		tabName, herr := this.CheckTableName(o, vals, true)
 		if herr != nil {
 			this.Response(res, nil, herr)
 			return
@@ -154,14 +137,30 @@ func (this *Service) CreateM(req *CreateMRequest, res *core.SlotResponse) {
 		instancesByTabName[tabName] = append(instancesByTabName[tabName], ins)
 	}
 
+	if hook := this.beforeCreateHookNames[*req.Key]; hook != "" {
+		reply := core.CallerResponse{}
+		stop := false
+		for _, vs := range vss {
+			this.callBeforeCreateHook(hook, &CreateRequest{
+				Key:    req.Key,
+				Object: &vs,
+			}, &reply, &stop)
+			if reply.Error != nil {
+				this.Response(res, nil, reply.Error)
+				return
+			}
+			if stop {
+				this.Response(res, reply.Data, reply.Error)
+				return
+			}
+		}
+	}
+
+	//批量创建记录
 	var ids []htypes.Any
 	for tab, instances := range instancesByTabName {
 		if err := this.getDB(o.database).Table(tab).Create(instances).Error; err != nil {
-			if strings.Index(err.Error(), "Error 1062") >= 0 {
-				this.Response(res, nil, herrors.ErrCallerInvalidRequest.New("object duplicated"))
-			} else {
-				this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
-			}
+			this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
 			return
 		}
 		for _, ins := range instances {
@@ -169,11 +168,14 @@ func (this *Service) CreateM(req *CreateMRequest, res *core.SlotResponse) {
 		}
 	}
 
+	//调用钩子函数
 	if hook := this.afterCreateHookNames[*req.Key]; hook != "" {
 		reply := core.CallerResponse{}
 		for _, vs := range vss {
-			createReq.Object = &vs
-			this.callAfterCreateHook(hook, createReq, &reply)
+			this.callAfterCreateHook(hook, &CreateRequest{
+				Key:    req.Key,
+				Object: &vs,
+			}, &reply)
 			if reply.Error != nil {
 				this.Response(res, nil, reply.Error)
 				return
@@ -190,6 +192,8 @@ type UpdateRequest struct {
 	Key    *string     `json:"key" param:"require"`
 	Filter *rawFilter  `json:"filter" param:"require"`
 	Value  *htypes.Map `json:"value" param:"require"`
+
+	Bucket htypes.Map
 }
 
 func (this *Service) Update(req *UpdateRequest, res *core.SlotResponse) {
@@ -214,10 +218,26 @@ func (this *Service) Update(req *UpdateRequest, res *core.SlotResponse) {
 		}
 	}
 
+	//提取Update的值
+	vs, err := this.shapeObjectFieldValues(opUpdate, o.name, *req.Value)
+	if err != nil {
+		this.Response(res, nil, err)
+		return
+	}
+	if len(vs) == 0 {
+		this.Response(res, nil, herrors.ErrCallerInvalidRequest.New("valid updated field values not found"))
+		return
+	} else {
+		req.Value = &vs
+	}
+
 	//处理filters
 	filters, herr := this.parseRawFilter(o.iFieldMap, req.Filter)
 	if herr != nil {
 		this.Response(res, nil, herr)
+		return
+	} else if filters == nil {
+		this.Response(res, nil, herrors.ErrUserInvalidAct.New("filter required"))
 		return
 	}
 	filtersSetValues := this.getFieldValuesSetByFilters(filters)
@@ -226,34 +246,20 @@ func (this *Service) Update(req *UpdateRequest, res *core.SlotResponse) {
 		return
 	}
 
-	tableName, herr := this.checkTableName(o, filtersSetValues[o.key], false)
+	tableName, herr := this.CheckTableName(o, filtersSetValues[o.key], false)
 	if herr != nil {
 		this.Response(res, nil, herr)
 		return
 	}
 
 	//处理where子句
-	var where string
-	var vals []interface{}
-	if filters != nil {
-		where, vals, herr = this.buildWhereClause(filters)
-		if herr != nil {
-			this.Response(res, nil, herr)
-			return
-		}
-	}
-
-	//提取Update的值
-	vs, err := this.shapeObjectFieldValues(opUpdate, o.name, *req.Value)
-	if err != nil {
-		this.Response(res, nil, err)
-		return
-	}
-	if len(vs) < 2 {
-		this.Response(res, nil, herrors.ErrCallerInvalidRequest.New("valid updated field values not found"))
+	where, vals, herr := this.buildWhereClause(filters)
+	if herr != nil {
+		this.Response(res, nil, herr)
 		return
 	}
 
+	//调用钩子函数
 	if hook := this.beforeUpdateHookNames[*req.Key]; hook != "" {
 		reply := core.CallerResponse{}
 		stop := false
@@ -264,20 +270,19 @@ func (this *Service) Update(req *UpdateRequest, res *core.SlotResponse) {
 		}
 	}
 
+	//执行update
 	values := make(map[string]interface{})
 	for n, v := range vs {
 		values[o.fieldMapByName[n].col] = v
 	}
-
-	//执行update
-	if err := this.getDB(o.database).Table(tableName).Where(where, vals...).Updates(values).Error; err != nil {
+	if err := this.getDB(o.database).Table(fmt.Sprintf("`%s` AS `%s`", tableName, o.key)).Where(where, vals...).Updates(values).Error; err != nil {
 		this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
 		return
 	}
 
+	//调用钩子函数
 	if hook := this.afterUpdateHookNames[*req.Key]; hook != "" {
 		reply := core.CallerResponse{}
-		req.Value = &vs
 		this.callAfterUpdateHook(hook, req, &reply)
 		this.Response(res, reply.Data, reply.Error)
 	} else {
@@ -316,7 +321,7 @@ func (this *Service) Delete(req *DeleteRequest, res *core.SlotResponse) {
 
 	instancesByTabName := make(map[string][]htypes.Map)
 	for _, vals := range *req.Objects {
-		tabName, herr := this.checkTableName(o, vals, false)
+		tabName, herr := this.CheckTableName(o, vals, false)
 		if herr != nil {
 			this.Response(res, nil, herr)
 			return
@@ -380,7 +385,7 @@ func (this *Service) Query(req *QueryRequest, res *core.SlotResponse) {
 	}
 	filtersSetValues := this.getFieldValuesSetByFilters(filters)
 
-	tableName, herr := this.checkTableName(o, filtersSetValues[o.key], false)
+	tableName, herr := this.CheckTableName(o, filtersSetValues[o.key], false)
 	if herr != nil {
 		this.Response(res, nil, herr)
 		return
@@ -634,7 +639,7 @@ func (this *Service) View(req *QueryRequest, res *core.SlotResponse) {
 	var joins []string
 	var tableName string
 
-	if tab, herr = this.checkTableName(vw.from, filtersSetValues[vw.from.key], false); herr != nil {
+	if tab, herr = this.CheckTableName(vw.from, filtersSetValues[vw.from.key], true); herr != nil {
 		this.Response(res, nil, herr)
 		return
 	} else {
@@ -644,7 +649,7 @@ func (this *Service) View(req *QueryRequest, res *core.SlotResponse) {
 
 	scope = scope.Select(selectFieldNames)
 	for _, join := range vw.joins {
-		if tab, herr = this.checkTableName(join.object, filtersSetValues[join.object.key], true); herr != nil {
+		if tab, herr = this.CheckTableName(join.object, filtersSetValues[join.object.key], true); herr != nil {
 			this.Response(res, nil, herr)
 			return
 		} else {
@@ -660,13 +665,6 @@ func (this *Service) View(req *QueryRequest, res *core.SlotResponse) {
 	if where != "" {
 		scope = scope.Where(where, vals...)
 	}
-
-	//if group.column != "" {
-	//	scope = scope.Group(group.column)
-	//}
-	//if group.having != nil {
-	//	scope = scope.Having(fmt.Sprintf("%s %s ?", group.having.field.SqlField(), group.having.compare), group.having.value)
-	//}
 
 	if len(orderBys) > 0 {
 		scope = scope.Order(strings.Join(orderBys, ","))
