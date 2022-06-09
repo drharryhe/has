@@ -340,8 +340,9 @@ func (this *Service) Delete(req *DeleteRequest, res *core.SlotResponse) {
 				values = append(values, v)
 			}
 		}
-		if err := db.Table(tab).Where(strings.Join(where, "AND"), values...).Delete(ins).Error; err != nil {
+		if err := db.Table(tab).Where(strings.Join(where, " AND "), values...).Delete(ins).Error; err != nil {
 			this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
+			return
 		}
 	}
 
@@ -455,6 +456,7 @@ func (this *Service) Query(req *QueryRequest, res *core.SlotResponse) {
 		lmt.count = (*req.Paging)[1]
 	}
 
+	//调用钩子函数
 	if hook := this.beforeQueryHookNames[*req.Key]; hook != "" {
 		reply := core.CallerResponse{}
 		stop := false
@@ -499,6 +501,7 @@ func (this *Service) Query(req *QueryRequest, res *core.SlotResponse) {
 		}
 	}
 
+	//调用钩子函数
 	var records interface{}
 	records = data
 	if hook := this.afterQueryHookNames[*req.Key]; hook != "" {
@@ -508,6 +511,7 @@ func (this *Service) Query(req *QueryRequest, res *core.SlotResponse) {
 		records = reply.Data
 	}
 
+	//分页查询时，计算总数
 	if computeTotal {
 		var total int64
 		var err error
@@ -535,7 +539,19 @@ func (this *Service) Query(req *QueryRequest, res *core.SlotResponse) {
 	}
 }
 
-func (this *Service) View(req *QueryRequest, res *core.SlotResponse) {
+type ViewRequest struct {
+	core.SlotRequestBase
+
+	Key      *string    `json:"key" param:"require"`
+	Filter   *rawFilter `json:"filter" param:"require"`
+	Dims     *[]string  `json:"dims" param:"require;type:StringArray"`
+	Ordering *[]string  `json:"ordering" param:"type:StringArray"`
+	Paging   *[]int     `json:"paging" param:"type:NumberRange"`
+
+	Records []htypes.Any `param:"-"`
+}
+
+func (this *Service) View(req *ViewRequest, res *core.SlotResponse) {
 	vw := this.viewsWithKey[*req.Key]
 	if vw == nil {
 		this.Response(res, nil, herrors.ErrSysInternal.New("key [%s] not found", *req.Key))
@@ -602,7 +618,7 @@ func (this *Service) View(req *QueryRequest, res *core.SlotResponse) {
 				this.Response(res, nil, herr)
 				return
 			}
-			orderBys = append(orderBys, fmt.Sprintf("%s %s", order.column, order.direction))
+			orderBys = append(orderBys, fmt.Sprintf("`%s`.`%s` %s", order.object, order.column, order.direction))
 		}
 	}
 
@@ -615,25 +631,19 @@ func (this *Service) View(req *QueryRequest, res *core.SlotResponse) {
 		lmt.count = (*req.Paging)[1]
 	}
 
-	//var group groupBy
-	//if ps["group"] != nil {
-	//	gs := ps["group"].([]interface{})
-	//	f := o.fieldMap[gs[0].(string)]
-	//	if f != nil {
-	//		group.column = f.key
-	//		if len(gs) > 1 {
-	//			ss, err := this.parseCondition(gs[1].(string))
-	//			if err != nil {
-	//				this.Response(res, nil, err)
-	//				return
-	//			}
-	//			group.having = this.convCond2Filter(o.iFieldMap, ss)
-	//		}
-	//	}
-	//}
+	//调用钩子函数
+	if hook := this.beforeViewHookNames[*req.Key]; hook != "" {
+		reply := core.CallerResponse{}
+		stop := false
+		this.callBeforeViewHook(hook, req, &reply, &stop)
+		if reply.Error != nil && stop {
+			this.Response(res, nil, reply.Error)
+			return
+		}
+	}
 
 	//查询数据
-	var data []interface{}
+	var data []htypes.Any
 	var tab string
 	var scope *gorm.DB
 	var joins []string
@@ -690,11 +700,22 @@ func (this *Service) View(req *QueryRequest, res *core.SlotResponse) {
 		data = append(data, this.bindDimValues(vw.iFieldMap, dims, vals))
 	}
 
+	//调用钩子函数
+	var records interface{}
+	records = data
+	if hook := this.afterViewHookNames[*req.Key]; hook != "" {
+		reply := core.CallerResponse{}
+		req.Records = data
+		this.callAfterViewHook(hook, req, &reply)
+		records = reply.Data
+	}
+
+	//分页查询时，计算总数
 	if computeTotal {
 		var total int64
 		scope = db.Table(tableName)
-		for _, join := range joins {
-			scope = scope.Joins(join)
+		for _, jn := range joins {
+			scope = scope.Joins(jn)
 		}
 		if where != "" {
 			err = scope.Where(where, vals...).Count(&total).Error
@@ -711,12 +732,12 @@ func (this *Service) View(req *QueryRequest, res *core.SlotResponse) {
 			if data == nil || reflect.ValueOf(data).IsNil() {
 				resData["records"] = []interface{}{}
 			} else {
-				resData["records"] = data
+				resData["records"] = records
 			}
 			this.Response(res, resData, nil)
 		}
 	} else {
-		this.Response(res, data, nil)
+		this.Response(res, records, nil)
 	}
 
 }
