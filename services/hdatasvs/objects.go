@@ -179,6 +179,7 @@ type rawFilter struct {
 }
 
 type ordering struct {
+	object    string
 	column    string
 	direction string
 }

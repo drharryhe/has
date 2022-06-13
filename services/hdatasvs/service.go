@@ -61,6 +61,10 @@ type Service struct {
 	afterQueryHookNames     map[string]string
 	beforeQueryHookCallers  map[string]*core.MethodCaller
 	beforeQueryHookNames    map[string]string
+	afterViewHookCallers    map[string]*core.MethodCaller
+	afterViewHookNames      map[string]string
+	beforeViewHookCallers   map[string]*core.MethodCaller
+	beforeViewHookNames     map[string]string
 	afterDelHookCallers     map[string]*core.MethodCaller
 	afterDelHookNames       map[string]string
 	beforeDelHookCallers    map[string]*core.MethodCaller
@@ -91,6 +95,8 @@ func (this *Service) Open(s core.IServer, instance core.IService, options htypes
 	this.afterUpdateHookNames = make(map[string]string)
 	this.beforeQueryHookNames = make(map[string]string)
 	this.afterQueryHookNames = make(map[string]string)
+	this.beforeViewHookNames = make(map[string]string)
+	this.afterViewHookNames = make(map[string]string)
 	this.beforeDelHookNames = make(map[string]string)
 	this.afterDelHookNames = make(map[string]string)
 
@@ -152,7 +158,6 @@ func (this *Service) Config() core.IEntityConf {
 }
 
 func (this *Service) buildWhereClause(fs *filter) (string, []interface{}, *herrors.Error) {
-	logic := "AND"
 	var (
 		where string
 		vals  []interface{}
@@ -160,6 +165,7 @@ func (this *Service) buildWhereClause(fs *filter) (string, []interface{}, *herro
 		v     interface{}
 	)
 
+	logic := "AND"
 	for i, f := range fs.conditions {
 		if f.field.Kind() == reflect.Slice || f.field.Kind() == reflect.Map || f.field.Kind() == reflect.Struct || f.field.Kind() == reflect.Ptr {
 			continue
@@ -260,7 +266,7 @@ func (this *Service) buildWhereClause(fs *filter) (string, []interface{}, *herro
 			return "", nil, err
 		}
 		if where == "" {
-			where = fmt.Sprintf("%s %s", where, w)
+			where = w
 		} else {
 			where = fmt.Sprintf("%s %s %s", where, logic, w)
 		}
@@ -767,6 +773,8 @@ func (this *Service) mountHookCallers(h htypes.Any) {
 	this.mountBeforeDelHook(h)
 	this.mountAfterQueryHook(h)
 	this.mountBeforeQueryHook(h)
+	this.mountAfterViewHook(h)
+	this.mountBeforeViewHook(h)
 	this.mountAfterCreateHook(h)
 	this.mountBeforeCreateHook(h)
 	this.mountAfterUpdateHook(h)
@@ -1126,6 +1134,60 @@ func (this *Service) mountBeforeQueryHook(anchor htypes.Any) {
 	}
 }
 
+func (this *Service) mountBeforeViewHook(anchor htypes.Any) {
+	this.beforeViewHookCallers = make(map[string]*core.MethodCaller)
+	typ := reflect.TypeOf(anchor)
+	val := reflect.ValueOf(anchor)
+	n := val.NumMethod()
+	for i := 0; i < n; i++ {
+		method := typ.Method(i)
+		if !method.IsExported() {
+			continue
+		}
+
+		mtype := method.Type
+
+		if mtype.NumOut() != 0 {
+			continue
+		}
+
+		if mtype.NumIn() != 5 {
+			continue
+		}
+
+		ctxType := mtype.In(1)
+		if !ctxType.Implements(reflect.TypeOf((*core.IService)(nil)).Elem()) {
+			continue
+		}
+
+		ctxType = mtype.In(2)
+		if ctxType.Kind() != reflect.Ptr {
+			continue
+		}
+		if ctxType.Name() != "ViewRequest" {
+			continue
+		}
+
+		ctxType = mtype.In(3)
+		if ctxType.Kind() != reflect.Ptr {
+			continue
+		}
+		if ctxType.Elem().Name() != "CallerResponse" {
+			continue
+		}
+
+		ctxType = mtype.In(4)
+		if ctxType.Kind() != reflect.Ptr {
+			continue
+		}
+		if ctxType.Elem().Kind() != reflect.Bool {
+			continue
+		}
+
+		this.beforeViewHookCallers[method.Name] = &core.MethodCaller{Object: val, Handler: method.Func}
+	}
+}
+
 func (this *Service) mountAfterQueryHook(anchor htypes.Any) {
 	this.afterQueryHookCallers = make(map[string]*core.MethodCaller)
 	typ := reflect.TypeOf(anchor)
@@ -1169,6 +1231,52 @@ func (this *Service) mountAfterQueryHook(anchor htypes.Any) {
 		}
 
 		this.afterQueryHookCallers[method.Name] = &core.MethodCaller{Object: val, Handler: method.Func}
+	}
+}
+
+func (this *Service) mountAfterViewHook(anchor htypes.Any) {
+	this.afterViewHookCallers = make(map[string]*core.MethodCaller)
+	typ := reflect.TypeOf(anchor)
+	val := reflect.ValueOf(anchor)
+	n := val.NumMethod()
+	for i := 0; i < n; i++ {
+		method := typ.Method(i)
+		if !method.IsExported() {
+			continue
+		}
+		mtype := method.Type
+
+		if mtype.NumOut() != 0 {
+			continue
+		}
+
+		if mtype.NumIn() != 4 {
+			continue
+		}
+
+		ctxType := mtype.In(1)
+		if !ctxType.Implements(reflect.TypeOf((*core.IService)(nil)).Elem()) {
+			continue
+		}
+
+		// parameters
+		ctxType = mtype.In(2)
+		if ctxType.Kind() != reflect.Ptr {
+			continue
+		}
+		if ctxType.Name() != "ViewRequest" {
+			continue
+		}
+
+		ctxType = mtype.In(3)
+		if ctxType.Kind() != reflect.Ptr {
+			continue
+		}
+		if ctxType.Elem().Name() != "CallerResponse" {
+			continue
+		}
+
+		this.afterViewHookCallers[method.Name] = &core.MethodCaller{Object: val, Handler: method.Func}
 	}
 }
 
@@ -1223,6 +1331,25 @@ func (this *Service) callBeforeQueryHook(name string, req *QueryRequest, reply *
 	caller := this.beforeQueryHookCallers[name]
 	if caller == nil {
 		reply.Error = herrors.ErrSysInternal.New("before query hook [%s] not found", name)
+		return
+	}
+
+	caller.Handler.Call([]reflect.Value{caller.Object, reflect.ValueOf(this), reflect.ValueOf(req), reflect.ValueOf(reply), reflect.ValueOf(stop)})
+}
+
+func (this *Service) callBeforeViewHook(name string, req *ViewRequest, reply *core.CallerResponse, stop *bool) {
+	if !hconf.IsDebug() {
+		defer func() {
+			e := recover()
+			if e != nil {
+				reply.Error = herrors.ErrSysInternal.New(e.(error).Error())
+			}
+		}()
+	}
+
+	caller := this.beforeViewHookCallers[name]
+	if caller == nil {
+		reply.Error = herrors.ErrSysInternal.New("before view hook [%s] not found", name)
 		return
 	}
 
@@ -1299,6 +1426,25 @@ func (this *Service) callAfterQueryHook(name string, req *QueryRequest, reply *c
 	caller := this.afterQueryHookCallers[name]
 	if caller == nil {
 		reply.Error = herrors.ErrSysInternal.New("after query hook %s not found", name)
+		return
+	}
+
+	caller.Handler.Call([]reflect.Value{caller.Object, reflect.ValueOf(this), reflect.ValueOf(req), reflect.ValueOf(reply)})
+}
+
+func (this *Service) callAfterViewHook(name string, req *ViewRequest, reply *core.CallerResponse) {
+	if !hconf.IsDebug() {
+		defer func() {
+			e := recover()
+			if e != nil {
+				reply.Error = herrors.ErrSysInternal.New(e.(error).Error())
+			}
+		}()
+	}
+
+	caller := this.afterViewHookCallers[name]
+	if caller == nil {
+		reply.Error = herrors.ErrSysInternal.New("after view hook %s not found", name)
 		return
 	}
 
@@ -1405,6 +1551,8 @@ func (this *Service) parseObject(name string, o interface{}) (*object, *herrors.
 			afterDelete  string
 			beforeQuery  string
 			afterQuery   string
+			beforeView   string
+			afterView    string
 		}
 
 		if f.Type.Kind() == reflect.Struct && f.Type.Name() == "DataObject" {
@@ -1438,6 +1586,10 @@ func (this *Service) parseObject(name string, o interface{}) (*object, *herrors.
 						hookNames.beforeQuery = v
 					case "afterQuery":
 						hookNames.afterQuery = v
+					case "beforeView":
+						hookNames.beforeView = v
+					case "afterView":
+						hookNames.afterView = v
 					case "beforeDelete":
 						hookNames.beforeDelete = v
 					case "afterDelete":
@@ -1468,6 +1620,18 @@ func (this *Service) parseObject(name string, o interface{}) (*object, *herrors.
 				}
 				if hookNames.afterDelete != "" {
 					this.afterDelHookNames[obj.key] = hookNames.afterDelete
+				}
+				if hookNames.beforeQuery != "" {
+					this.beforeQueryHookNames[obj.key] = hookNames.beforeQuery
+				}
+				if hookNames.afterQuery != "" {
+					this.afterQueryHookNames[obj.key] = hookNames.afterQuery
+				}
+				if hookNames.beforeView != "" {
+					this.beforeViewHookNames[obj.key] = hookNames.beforeView
+				}
+				if hookNames.afterView != "" {
+					this.afterViewHookNames[obj.key] = hookNames.afterView
 				}
 			}
 			continue
@@ -1835,7 +1999,7 @@ func (this *Service) parseViewField(view *view, f *viewField, s string) *herrors
 	f.owner = &fieldOwner{
 		object:   obj,
 		fieldKey: of.key,
-		fieldCol: this.getDB(obj.database).NamingStrategy.ColumnName("", of.name),
+		fieldCol: of.col,
 	}
 
 	return nil
@@ -1944,6 +2108,7 @@ func (this *Service) parseOrderBy(fldMap map[string]iField, s string) (*ordering
 		return nil, herrors.ErrCallerInvalidRequest.New("invalid ordering parameter [%s], [%s] not found", s, ss[0])
 	}
 	order := &ordering{}
+	order.object = f.Owner().object.key
 	order.column = f.Key()
 	if len(ss) == 1 || strings.ToUpper(strings.Trim(ss[1], " ")) == "ASC" {
 		order.direction = "ASC"

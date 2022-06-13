@@ -120,6 +120,9 @@ func ParseTag(tag string) map[string]string {
 	ret := make(map[string]string)
 	ss := strings.Split(tag, ";")
 	for _, s := range ss {
+		if strings.TrimSpace(s) == "" {
+			continue
+		}
 		kv := strings.Split(s, ":")
 		if len(kv) == 1 {
 			ret[s] = ""
