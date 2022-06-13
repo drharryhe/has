@@ -94,6 +94,9 @@ func Validate(v interface{}, typ HType) error {
 		if l := len(rng); l != 2 {
 			return fmt.Errorf("mismatched data type, NumberRange expected, but got [%d] elements", l)
 		}
+		if rng[0] == nil || rng[1] == nil {
+			return fmt.Errorf("invalid parameter,NumberRange got nil element")
+		}
 		if !IsNumber(rng[0]) {
 			return fmt.Errorf("mismatched data type, NumberRange expected, but got [%s]", reflect.TypeOf(rng[0]).Kind())
 		}
@@ -109,6 +112,10 @@ func Validate(v interface{}, typ HType) error {
 		if l := len(rng); l != 2 {
 			return fmt.Errorf("mismatched data type, DateRange expected, but got [%d] elements", l)
 		}
+		if rng[0] == nil || rng[1] == nil {
+			return fmt.Errorf("invalid parameter,DateRange got nil element")
+		}
+
 		if k := reflect.ValueOf(rng[0]).Kind(); k != reflect.String {
 			return fmt.Errorf("mismatched data type, DateRange expected, but got [%s]", reflect.TypeOf(rng[0]).Kind())
 		}
@@ -130,6 +137,10 @@ func Validate(v interface{}, typ HType) error {
 		if l := len(rng); l != 2 {
 			return fmt.Errorf("mismatched data type, DateTimeRange expected, but got [%d] elements", l)
 		}
+		if rng[0] == nil || rng[1] == nil {
+			return fmt.Errorf("invalid parameter,DateTimeRange got nil element")
+		}
+
 		if k := reflect.ValueOf(rng[0]).Kind(); k != reflect.String {
 			return fmt.Errorf("mismatched data type, DateTimeRange expected, but got [%s]", GetKindName(k))
 		}
@@ -149,6 +160,9 @@ func Validate(v interface{}, typ HType) error {
 		}
 		rng := v.([]interface{})
 		for _, b := range rng {
+			if v == nil {
+				return fmt.Errorf("invalid parameter,NumberArray got nil element")
+			}
 			if !IsNumber(b) {
 				return fmt.Errorf("mismatched data type, NumberArray expected, but got a [%s]", GetKindName(reflect.TypeOf(b).Kind()))
 			}
@@ -160,6 +174,9 @@ func Validate(v interface{}, typ HType) error {
 		}
 		rng := v.([]interface{})
 		for _, b := range rng {
+			if v == nil {
+				return fmt.Errorf("invalid parameter,StringArray got nil element")
+			}
 			if k := reflect.TypeOf(b).Kind(); k != reflect.String {
 				return fmt.Errorf("mismatched data type, StringArray expected, but got a [%s]", GetKindName(k))
 			}
@@ -171,6 +188,10 @@ func Validate(v interface{}, typ HType) error {
 		}
 		rng := v.([]interface{})
 		for _, b := range rng {
+			if v == nil {
+				return fmt.Errorf("invalid parameter,DateArray got nil element")
+			}
+
 			if k := reflect.TypeOf(b).Kind(); k != reflect.String {
 				return fmt.Errorf("mismatched data type, DateArray expected, but got a [%s]", GetKindName(k))
 			}
@@ -185,6 +206,10 @@ func Validate(v interface{}, typ HType) error {
 		}
 		rng := v.([]interface{})
 		for _, b := range rng {
+			if v == nil {
+				return fmt.Errorf("invalid parameter,DateTimeArray got nil element")
+			}
+
 			if k := reflect.TypeOf(b).Kind(); k != reflect.String {
 				return fmt.Errorf("mismatched data type, DateTimeArray expected, but got a [%s]", GetKindName(k))
 			}
@@ -202,6 +227,10 @@ func Validate(v interface{}, typ HType) error {
 		oa1, ok := v.([]Any)
 		if ok {
 			for _, s := range oa1 {
+				if s == nil {
+					return fmt.Errorf("invalid parameter,ObjectArray got nil element")
+				}
+
 				if k := reflect.ValueOf(s).Kind(); k != reflect.Map {
 					return fmt.Errorf("mismatched data type, ObjectArray expected, but got a [%s]", GetKindName(k))
 				}
@@ -212,6 +241,10 @@ func Validate(v interface{}, typ HType) error {
 		oa2, ok := v.([]interface{})
 		if ok {
 			for _, s := range oa2 {
+				if s == nil {
+					return fmt.Errorf("invalid parameter,ObjectArray got nil element")
+				}
+
 				if k := reflect.ValueOf(s).Kind(); k != reflect.Map {
 					return fmt.Errorf("mismatched data type, ObjectArray expected, but got a [%s]", GetKindName(k))
 				}

@@ -515,11 +515,14 @@ func (this *Service) Query(req *QueryRequest, res *core.SlotResponse) {
 	if computeTotal {
 		var total int64
 		var err error
+		scope = this.getDB(o.database).Table(fmt.Sprintf("`%s` AS `%s`", tableName, o.key))
+		scope = scope.Select(fmt.Sprintf("%s"), o.primaryField.col)
 		if where != "" && where != "()" {
 			err = scope.Where(where, vals...).Count(&total).Error
 		} else {
-			err = scope.Count(&total).Error
+			err = scope.Select(fmt.Sprintf("%s"), o.primaryField.col).Where("1>0").Count(&total).Error
 		}
+
 		if err != nil {
 			this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
 			return

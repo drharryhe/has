@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"strings"
 
+	jsoniter "github.com/json-iterator/go"
 	"go.uber.org/ratelimit"
 	"gopkg.in/go-playground/validator.v9"
 
@@ -230,9 +231,11 @@ func (this *Service) callSlotHandler(slot *Slot, params htypes.Map) (htypes.Any,
 		var res SlotResponse
 
 		req := hruntime.CloneObject(slot.ReqInstance)
-		if err := hruntime.Map2Struct(params, req); err != nil {
-			return nil, herrors.ErrSysInternal.New(err.Error())
-		}
+		bs, _ := jsoniter.Marshal(params)
+		_ = jsoniter.Unmarshal(bs, req)
+		//if err := hruntime.Map2Struct(params, req); err != nil {
+		//	return nil, herrors.ErrSysInternal.New(err.Error())
+		//}
 
 		handler.Handler.Call([]reflect.Value{handler.Object, reflect.ValueOf(req), reflect.ValueOf(&res)})
 		if res.Error != nil {
