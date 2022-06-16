@@ -111,7 +111,15 @@ func (this *Service) Login(req *LoginRequest, res *core.SlotResponse) {
 	this.Response(res, &result, nil)
 }
 
-func (this *Service) CheckLogin(req *LoginRequest, res *core.SlotResponse) {
+type CheckLoginRequest struct {
+	core.SlotRequestBase
+
+	Name  *string `json:"name" param:"require"`
+	IP    *string `json:"ip"`
+	Agent *string `json:"User-Agent"`
+}
+
+func (this *Service) CheckLogin(req *CheckLoginRequest, res *core.SlotResponse) {
 	isRoot := false
 	if *req.Name == this.conf.SuperName {
 		isRoot = true
@@ -136,7 +144,11 @@ func (this *Service) CheckLogin(req *LoginRequest, res *core.SlotResponse) {
 
 	if this.loginHook != nil {
 		var extra core.CallerResponse
-		this.callLoginHook(req, &extra)
+		this.callLoginHook(&LoginRequest{
+			Name:  req.Name,
+			IP:    req.IP,
+			Agent: req.Agent,
+		}, &extra)
 		if extra.Error != nil {
 			this.Response(res, nil, extra.Error)
 			return
