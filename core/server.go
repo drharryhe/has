@@ -153,7 +153,6 @@ func (this *ServerImplement) Plugin(cls string) IPlugin {
 }
 
 func (this *ServerImplement) Start() {
-	//根据配置决定是否支持多核，缺省是单核,  如果是docker容器，需要做特殊处理
 	if this.conf.MaxProcs > 0 {
 		runtime.GOMAXPROCS(this.conf.MaxProcs)
 	}

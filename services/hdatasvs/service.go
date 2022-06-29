@@ -15,6 +15,7 @@ import (
 
 	"github.com/drharryhe/has/common/hconf"
 	"github.com/drharryhe/has/common/herrors"
+	"github.com/drharryhe/has/common/hlogger"
 	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/core"
 	"github.com/drharryhe/has/plugins/hdatabaseplugin"
@@ -127,7 +128,11 @@ func (this *Service) Open(s core.IServer, instance core.IService, options htypes
 				this.objectsByName[n] = obj
 
 				if err := this.getDB(obj.database).AutoMigrate(o); err != nil {
-					return herrors.ErrSysInternal.New(err.Error())
+					if hconf.IsDebug() {
+						_ = herrors.ErrSysInternal.New(err.Error())
+					} else {
+						hlogger.Error(herrors.ErrSysInternal.New(err.Error()))
+					}
 				}
 			}
 		}
@@ -1644,7 +1649,11 @@ func (this *Service) parseObject(name string, o interface{}) (*object, *herrors.
 		of := newObjectField()
 		of.kind = f.Type.Kind()
 		if of.kind == reflect.Struct {
-			of.kind = reflect.Map
+			if f.Type.Name() == "Time" {
+				of.kind = reflect.Int64
+			} else {
+				of.kind = reflect.Map
+			}
 		}
 		of.name = f.Name
 

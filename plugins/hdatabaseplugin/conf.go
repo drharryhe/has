@@ -24,4 +24,5 @@ type connection struct {
 	InitDataAfterSecond int
 	ReadTimeout         int
 	WriteTimeout        int
+	SingularTable       bool
 }

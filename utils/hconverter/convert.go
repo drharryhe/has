@@ -2,6 +2,7 @@ package hconverter
 
 import (
 	"fmt"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -205,5 +206,32 @@ func IntToHexString(v int64, bits int) string {
 		return fmt.Sprintf("%016x", v)
 	default:
 		return fmt.Sprintf("%x", v)
+	}
+}
+
+func Float2Int(v float64, k reflect.Kind) interface{} {
+	switch k {
+	case reflect.Int64:
+		return uint64(v)
+	case reflect.Int32:
+		return uint64(v)
+	case reflect.Int16:
+		return uint64(v)
+	case reflect.Int:
+		return uint64(v)
+	case reflect.Int8:
+		return uint64(v)
+	case reflect.Uint:
+		return uint64(v)
+	case reflect.Uint8:
+		return uint64(v)
+	case reflect.Uint16:
+		return uint64(v)
+	case reflect.Uint32:
+		return uint64(v)
+	case reflect.Uint64:
+		return uint64(v)
+	default:
+		return v
 	}
 }
