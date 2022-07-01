@@ -10,6 +10,7 @@ import (
 	"github.com/drharryhe/has/common/herrors"
 	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/core"
+	"github.com/drharryhe/has/utils/hconverter"
 	"github.com/drharryhe/has/utils/hruntime"
 )
 
@@ -337,7 +338,7 @@ func (this *Service) Delete(req *DeleteRequest, res *core.SlotResponse) {
 		for _, vals := range valsSlice {
 			for k, v := range vals {
 				where = append(where, fmt.Sprintf("`%s` = ?", o.fieldMap[k].col))
-				values = append(values, v)
+				values = append(values, this.checkIfIntField(v, o.fieldMap[k].kind))
 			}
 		}
 		if err := db.Table(tab).Where(strings.Join(where, " AND "), values...).Delete(ins).Error; err != nil {
@@ -743,4 +744,12 @@ func (this *Service) View(req *ViewRequest, res *core.SlotResponse) {
 		this.Response(res, records, nil)
 	}
 
+}
+
+func (this *Service) checkIfIntField(v interface{}, k reflect.Kind) interface{} {
+	if reflect.TypeOf(v).Kind() == reflect.Float64 {
+		return hconverter.Float2Int(v.(float64), k)
+	}
+
+	return v
 }

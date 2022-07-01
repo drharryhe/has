@@ -146,7 +146,12 @@ func SetObjectValues(obj htypes.Any, values htypes.Map) error {
 		}
 		switch vv.Kind() {
 		case reflect.Struct:
-			if vk == reflect.String {
+			if vv.Type().Name() == "Time" {
+				if vk == reflect.Float64 {
+					t := time.Unix(int64(v.(float64)), 0)
+					vv.Set(reflect.ValueOf(t))
+				}
+			} else if vk == reflect.String {
 				if d, errd := time.ParseInLocation("2006-01-02", v.(string), time.Local); errd == nil {
 					v = d
 				} else if t, errt := time.ParseInLocation("2006-01-02 15:04:05", v.(string), time.Local); errt == nil {

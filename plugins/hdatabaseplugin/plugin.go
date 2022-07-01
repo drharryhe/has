@@ -11,6 +11,7 @@ import (
 	"gorm.io/driver/clickhouse"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/schema"
 
 	"github.com/drharryhe/has/common/hconf"
 	"github.com/drharryhe/has/common/herrors"
@@ -167,9 +168,16 @@ func (this *Plugin) openDatabase(conn *connection) (*gorm.DB, *herrors.Error) {
 LOOP:
 	var err error
 	var db *gorm.DB
+	var dbCfg gorm.Config
+
 	switch conn.Type {
 	case dbTypeMysql:
-		db, err = gorm.Open(mysql.Open(this.Dsn(conn, false)), &gorm.Config{})
+		if conn.SingularTable {
+			dbCfg.NamingStrategy = schema.NamingStrategy{
+				SingularTable: true,
+			}
+		}
+		db, err = gorm.Open(mysql.Open(this.Dsn(conn, false)), &dbCfg)
 		if err != nil {
 			if strings.Index(err.Error(), "1049") < 0 || shouldCreateDB {
 				return nil, herrors.ErrSysInternal.New(err.Error()).D("failed to open Plugin")
@@ -180,6 +188,12 @@ LOOP:
 		}
 		break
 	case dbTypeClickhouse:
+		if conn.SingularTable {
+			dbCfg.NamingStrategy = schema.NamingStrategy{
+				SingularTable: true,
+			}
+		}
+
 		if conn.ReadTimeout == 0 {
 			conn.ReadTimeout = defaultReadTimeout
 		}
