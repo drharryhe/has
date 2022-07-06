@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"github.com/mkideal/cli"
 	"os"
 	"os/signal"
 	"runtime"
@@ -33,6 +34,10 @@ type Server struct {
 	EntityConfBase
 
 	MaxProcs int
+}
+
+type CmdArgs struct {
+	Env string `cli:"e,env" usage:"当前运行环境(dev/prod)"`
 }
 
 func NewServer(opt *ServerOptions, args ...htypes.Any) *ServerImplement {
@@ -103,6 +108,24 @@ func (this *ServerImplement) init(opt *ServerOptions, args ...htypes.Any) {
 	if opt == nil {
 		panic("ServerOptions cannot be nil")
 	}
+
+	cli.Run(new(CmdArgs), func(ctx *cli.Context) error {
+		arg := ctx.Argv().(*CmdArgs)
+		switch arg.Env {
+		case "":
+			hlogger.Alert(">生产环境<")
+		case "dev":
+			hlogger.Alert(">开发环境<")
+			hconf.ConfFile = "conf_dev.toml"
+		case "test":
+			hlogger.Alert(">测试环境<")
+			hconf.ConfFile = "conf_test.toml"
+		default:
+			hlogger.Alert(">自定义: %s<", arg.Env)
+			hconf.ConfFile = fmt.Sprintf("conf_%s.toml", arg.Env)
+		}
+		return nil
+	})
 
 	hconf.Init()
 	hconf.Load(&this.conf)

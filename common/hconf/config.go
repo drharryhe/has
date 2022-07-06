@@ -14,8 +14,8 @@ import (
 	"github.com/drharryhe/has/utils/hruntime"
 )
 
-const (
-	confFile = "./conf.toml"
+var (
+	ConfFile = "./conf.toml"
 )
 
 var config Config
@@ -46,7 +46,7 @@ func IsDebug() bool {
 }
 
 func Init() {
-	bs, err := hio.ReadFile(confFile)
+	bs, err := hio.ReadFile(ConfFile)
 	if err != nil {
 		panic("failed to read config file \r\n" + err.Error())
 	}
@@ -96,7 +96,7 @@ func Save() {
 
 	//保存到文件
 	bs, _ = toml.Marshal(tmp)
-	err := ioutil.WriteFile(confFile, bs, 0x666)
+	err := ioutil.WriteFile(ConfFile, bs, 0x666)
 	if err != nil {
 		panic("failed to save configures,failed to write config file")
 	}

@@ -5,19 +5,18 @@ import (
 	"crypto/tls"
 	"fmt"
 	"github.com/gofiber/fiber/v2/middleware/pprof"
+	jsoniter "github.com/json-iterator/go"
 	"io"
 	"net/url"
 	"strings"
-
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/cors"
-	jsoniter "github.com/json-iterator/go"
 
 	"github.com/drharryhe/has/common/hconf"
 	"github.com/drharryhe/has/common/herrors"
 	"github.com/drharryhe/has/common/hlogger"
 	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/core"
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 )
 
 const (
@@ -255,6 +254,7 @@ func (this *Connector) ParseBodyParams(c *fiber.Ctx, ps htypes.Map) *herrors.Err
 		return nil
 	}
 	bs := c.Request().Body()
+	//hlogger.Info("原始消息: ", string(bs))
 	if len(bs) > 0 {
 		res := make(htypes.Map)
 		err := jsoniter.Unmarshal(bs, &res)

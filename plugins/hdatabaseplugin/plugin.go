@@ -201,7 +201,7 @@ LOOP:
 			conn.WriteTimeout = defaultWriteTimeout
 		}
 
-		db, err = gorm.Open(clickhouse.Open(this.Dsn(conn, false)), &gorm.Config{})
+		db, err = gorm.Open(clickhouse.Open(this.Dsn(conn, false)), &dbCfg)
 		if err != nil {
 			if strings.Index(err.Error(), "1049") < 0 || shouldCreateDB {
 				return nil, herrors.ErrSysInternal.New(err.Error()).D("failed to open Plugin")
