@@ -3,6 +3,8 @@ package core
 import (
 	"fmt"
 	"github.com/mkideal/cli"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"runtime"
@@ -34,6 +36,7 @@ type Server struct {
 	EntityConfBase
 
 	MaxProcs int
+	PprofPort int
 }
 
 type CmdArgs struct {
@@ -130,6 +133,21 @@ func (this *ServerImplement) init(opt *ServerOptions, args ...htypes.Any) {
 	hconf.Init()
 	hconf.Load(&this.conf)
 	hlogger.Init(hconf.LogOutputs(), hconf.LogFileName())
+
+	if hconf.IsDebug() {
+		go func() {
+			if this.conf.PprofPort == 0 {
+				this.conf.PprofPort = 6060
+			}
+			hlogger.Info("pprof port: %d", this.conf.PprofPort)
+			err := http.ListenAndServe(fmt.Sprintf(":%d", this.conf.PprofPort), nil)
+			if err != nil {
+				hlogger.Error(err)
+				this.conf.PprofPort++
+				return
+			}
+		}()
+	}
 
 	this.class = hruntime.GetObjectName(&this.conf)
 	this.Instance = this

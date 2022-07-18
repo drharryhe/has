@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/tls"
 	"fmt"
-	"github.com/gofiber/fiber/v2/middleware/pprof"
 	jsoniter "github.com/json-iterator/go"
 	"io"
 	"net/url"
@@ -56,7 +55,6 @@ func (this *Connector) Open(gw core.IAPIGateway, ins core.IAPIConnector) *herror
 
 	this.App.Use(cors.New())
 	if hconf.IsDebug() {
-		this.App.Use(pprof.New()) // pprof
 		this.App.Get("/error/query/:fingerprint", this.handleErrFingerprint)
 		this.App.Get("/error/statics", this.handleErrStatics)
 	}
