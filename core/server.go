@@ -35,7 +35,7 @@ const (
 type Server struct {
 	EntityConfBase
 
-	MaxProcs int
+	MaxProcs  int
 	PprofPort int
 }
 
@@ -139,12 +139,13 @@ func (this *ServerImplement) init(opt *ServerOptions, args ...htypes.Any) {
 			if this.conf.PprofPort == 0 {
 				this.conf.PprofPort = 6060
 			}
+		RETRY:
 			hlogger.Info("pprof port: %d", this.conf.PprofPort)
 			err := http.ListenAndServe(fmt.Sprintf(":%d", this.conf.PprofPort), nil)
 			if err != nil {
 				hlogger.Error(err)
 				this.conf.PprofPort++
-				return
+				goto RETRY
 			}
 		}()
 	}
