@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"strings"
 
 	jsoniter "github.com/json-iterator/go"
@@ -48,6 +49,8 @@ func IsDebug() bool {
 func Init() {
 	bs, err := hio.ReadFile(ConfFile)
 	if err != nil {
+		pwd, _ := os.Getwd()
+		fmt.Println("Project Work Path is ", pwd)
 		panic("failed to read config file \r\n" + err.Error())
 	}
 

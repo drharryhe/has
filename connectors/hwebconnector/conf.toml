@@ -10,3 +10,5 @@ BodyLimit = 4 #Mbit
 Tls = true
 TlsCertPath = "./certs/bby.crt"
 TlsKeyPath = "./certs/bby.key"
+WebSocketEnabled = false
+WebSocketUrl = "/:room_id"

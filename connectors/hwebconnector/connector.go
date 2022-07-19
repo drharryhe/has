@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"fmt"
+	"github.com/gofiber/websocket/v2"
 	jsoniter "github.com/json-iterator/go"
 	"io"
 	"net/url"
@@ -25,8 +26,10 @@ const (
 	defaultPort      = 1976
 )
 
-func New() *Connector {
-	return new(Connector)
+func New(options *core.ConnectorOptions /*map["application/json"]HandleFunc*/) *Connector {
+	this := new(Connector)
+	this.Options = options
+	return this
 }
 
 type Connector struct {
@@ -57,6 +60,24 @@ func (this *Connector) Open(gw core.IAPIGateway, ins core.IAPIConnector) *herror
 	if hconf.IsDebug() {
 		this.App.Get("/error/query/:fingerprint", this.handleErrFingerprint)
 		this.App.Get("/error/statics", this.handleErrStatics)
+	}
+	if this.conf.WebSocketEnabled {
+		if this.conf.WebSocketUrl == "" {
+			panic("You enabled the websocket service, but did not specify its route in the configuration file!")
+		}
+		if this.Options == nil || this.Options.BodyDecoders["ws"] == nil {
+			panic("You enabled the websocket service, but did not set up a resolution method for it!")
+		}
+		this.App.Use("/ws", func(c *fiber.Ctx) error {
+			// IsWebSocketUpgrade returns true if the client
+			// requested upgrade to the WebSocket protocol.
+			if websocket.IsWebSocketUpgrade(c) {
+				c.Locals("allowed", true)
+				return c.Next()
+			}
+			return fiber.ErrUpgradeRequired
+		})
+		this.App.Get(fmt.Sprintf("/ws%s", this.conf.WebSocketUrl), websocket.New(this.handleWsServiceAPI))
 	}
 	this.App.Get("/:version/:api", this.handleServiceAPI)
 	this.App.Post("/:version/:api", this.handleServiceAPI)
@@ -138,9 +159,20 @@ func (this *Connector) handleServiceAPI(c *fiber.Ctx) error {
 		return err
 	}
 
-	err = this.ParseBodyParams(c, ps)
-	if err != nil {
-		return err
+	if this.Options == nil {
+		err = this.ParseBodyParams(c, ps)
+		if err != nil {
+			return err
+		}
+	} else {
+		for mime, decoderFunc := range this.Options.BodyDecoders {
+			if string(c.Request().Header.ContentType()) == mime {
+				ps, err = decoderFunc(c)
+				if err != nil {
+					return err
+				}
+			}
+		}
 	}
 
 	ps[this.conf.AddressField] = c.IP()
@@ -158,6 +190,10 @@ func (this *Connector) handleServiceAPI(c *fiber.Ctx) error {
 		this.SendResponse(c, ret, err)
 	}
 	return nil
+}
+
+func (this *Connector) handleWsServiceAPI(c *websocket.Conn) {
+	_, _ = this.Options.BodyDecoders["ws"](c)
 }
 
 func (this *Connector) SendResponse(c *fiber.Ctx, data htypes.Any, err *herrors.Error) {
