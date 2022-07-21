@@ -1,7 +1,7 @@
-package examplesvs
+package hellosvs
 
 import "github.com/drharryhe/has/core"
 
-type ExampleService struct {
+type HelloService struct {
 	core.ServiceConf
 }

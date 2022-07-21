@@ -1,6 +1,7 @@
 package core
 
 import (
+	"github.com/drharryhe/has/common/hlogger"
 	"reflect"
 	"strings"
 
@@ -116,7 +117,7 @@ func (this *Service) Open(s IServer, instance IService, options htypes.Any) *her
 	}
 
 	this.initLimiter()
-
+	hlogger.Info("Service [%s] Registered...", this.class)
 	return nil
 }
 
