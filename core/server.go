@@ -113,8 +113,8 @@ func (this *ServerImplement) init(opt *ServerOptions, args ...htypes.Any) {
 	}
 
 	cli.Run(new(CmdArgs), func(ctx *cli.Context) error {
-		arg := ctx.Argv().(*CmdArgs)
-		switch arg.Env {
+		arg := ctx.Args()
+		switch arg[0] {
 		case "":
 			hlogger.Alert(">生产环境<")
 		case "dev":
@@ -124,8 +124,8 @@ func (this *ServerImplement) init(opt *ServerOptions, args ...htypes.Any) {
 			hlogger.Alert(">测试环境<")
 			hconf.ConfFile = "conf_test.toml"
 		default:
-			hlogger.Alert(">自定义: %s<", arg.Env)
-			hconf.ConfFile = fmt.Sprintf("conf_%s.toml", arg.Env)
+			hlogger.Alert(">自定义: %s<", arg)
+			hconf.ConfFile = fmt.Sprintf("conf_%s.toml", arg)
 		}
 		return nil
 	})
