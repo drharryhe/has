@@ -288,7 +288,9 @@ func (this *Connector) ParseBodyParams(c *fiber.Ctx, ps htypes.Map) *herrors.Err
 		return nil
 	}
 	bs := c.Request().Body()
-	//hlogger.Info("原始消息: ", string(bs))
+	if hconf.IsDebug() {
+		hlogger.Info("原始消息: ", string(bs))
+	}
 	if len(bs) > 0 {
 		res := make(htypes.Map)
 		err := jsoniter.Unmarshal(bs, &res)

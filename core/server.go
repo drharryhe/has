@@ -40,7 +40,8 @@ type Server struct {
 }
 
 type CmdArgs struct {
-	Env string `cli:"e,env" usage:"当前运行环境(dev/prod)"`
+	Env string `cli:"e,env" usage:"当前运行环境(dev/test)"`
+	Path string `cli:"p, path" usage:"配置文件存放的文件夹"`
 }
 
 func NewServer(opt *ServerOptions, args ...htypes.Any) *ServerImplement {
