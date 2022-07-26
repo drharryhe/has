@@ -200,7 +200,7 @@ func (this *Service) mountSlots(instance IService) *herrors.Error {
 		}
 
 		ctxType := mType.In(1)
-		if !ctxType.Implements(reflect.TypeOf((*ISlotRequest)(nil)).Elem()) {
+		if !ctxType.Implements(reflect.TypeOf((*ISlotRequest)(nil)).Elem()) && ctxType.Elem().Name() != "Map" {
 			continue
 		}
 
@@ -218,8 +218,10 @@ func (this *Service) mountSlots(instance IService) *herrors.Error {
 		this.slots[mName] = &Slot{
 			Name: mName,
 		}
-		if err := this.parseRequestParameters(mType.In(1), this.slots[mName]); err != nil {
-			return err
+		if mType.In(1).Elem().Name() != "Map" {
+			if err := this.parseRequestParameters(mType.In(1), this.slots[mName]); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -229,11 +231,16 @@ func (this *Service) mountSlots(instance IService) *herrors.Error {
 func (this *Service) callSlotHandler(slot *Slot, params htypes.Map) (htypes.Any, *herrors.Error) {
 	handler := this.slotHandlers[slot.Name]
 	if handler != nil {
-		var res SlotResponse
-
-		req := hruntime.CloneObject(slot.ReqInstance)
-		bs, _ := jsoniter.Marshal(params)
-		_ = jsoniter.Unmarshal(bs, req)
+		var (
+			res SlotResponse
+			req htypes.Any
+		)
+		req = &params
+		if slot.ReqInstance != nil {
+			req = hruntime.CloneObject(slot.ReqInstance)
+			bs, _ := jsoniter.Marshal(params)
+			_ = jsoniter.Unmarshal(bs, req)
+		}
 		//if err := hruntime.Map2Struct(params, req); err != nil {
 		//	return nil, herrors.ErrSysInternal.New(err.Error())
 		//}
