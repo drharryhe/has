@@ -30,12 +30,12 @@ func (this *Service) Login(req *LoginRequest, res *core.SlotResponse) {
 
 	isRoot := false
 	if *req.Name == this.conf.SuperName {
-		if this.conf.SuperFails >= this.conf.SuperFails {
+		if this.conf.SuperFailed >= this.conf.SuperFails {
 			this.Response(res, nil, herrors.ErrUserUnauthorizedAct.New(strUserLocked))
 			return
 		}
 		if this.conf.SuperPwd == "" || this.conf.SuperPwd != this.pwdEncodingFunc(pwd) {
-			this.conf.SuperFails++
+			this.conf.SuperFailed++
 			hconf.Save()
 			this.Response(res, nil, herrors.ErrUserInvalidAct.New(strInvalidUserOrPassword))
 			return

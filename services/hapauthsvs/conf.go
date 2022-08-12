@@ -24,6 +24,7 @@ type ApAuthService struct {
 	SuperName              string
 	SuperPwd               string
 	SuperFails             int
+	SuperFailed			   int
 	LockAfterFails         int
 	OutAddressField        string
 	OutAgentField          string

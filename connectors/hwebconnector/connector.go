@@ -79,6 +79,7 @@ func (this *Connector) Open(gw core.IAPIGateway, ins core.IAPIConnector) *herror
 		})
 		this.App.Get(fmt.Sprintf("/ws%s", this.conf.WebSocketUrl), websocket.New(this.handleWsServiceAPI))
 	}
+
 	this.App.Get("/:version/:api", this.handleServiceAPI)
 	this.App.Post("/:version/:api", this.handleServiceAPI)
 
@@ -143,7 +144,6 @@ func (this *Connector) handleErrStatics(c *fiber.Ctx) error {
 func (this *Connector) handleServiceAPI(c *fiber.Ctx) error {
 	api := c.Params("api")
 	version := c.Params("version")
-
 	ps, err := this.ParseQueryParams(c)
 	if err != nil {
 		return err
