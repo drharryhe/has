@@ -247,7 +247,9 @@ func (this *Connector) ParseFormParams(c *fiber.Ctx, ps htypes.Map) *herrors.Err
 }
 
 func (this *Connector) ParseBodyParams(c *fiber.Ctx, ps htypes.Map) *herrors.Error {
-	if c.Request().Header.ContentType() == nil || strings.Index(string(c.Request().Header.ContentType()), "application/json") < 0 {
+	if c.Request().Header.ContentType() == nil ||
+		(strings.Index(string(c.Request().Header.ContentType()), "application/json") < 0 &&
+			strings.Index(string(c.Request().Header.ContentType()), "application/text") < 0) { // TODO
 		return nil
 	}
 	bs := c.Request().Body()
