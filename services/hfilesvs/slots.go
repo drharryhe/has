@@ -7,6 +7,7 @@ import (
 	"path"
 
 	"github.com/minio/minio-go/v7"
+	"gorm.io/gorm"
 
 	"github.com/drharryhe/has/common/herrors"
 	"github.com/drharryhe/has/common/htypes"
@@ -71,17 +72,22 @@ func (this *Service) Download(req *DownloadRequest, res *core.SlotResponse) {
 	}
 }
 
+type UploadFileItem struct {
+	Name string `json:"name"`
+	Data []byte `json:"data"`
+}
+
 type UploadRequest struct {
 	core.SlotRequestBase
 
-	Files *[]htypes.Any `json:"files" param:"require"`
+	Files *[]UploadFileItem `json:"files" param:"require"`
 }
 
 func (this *Service) Upload(req *UploadRequest, res *core.SlotResponse) {
 	var rep core.CallerResponse
 	if this.hook != nil {
 		for _, f := range *req.Files {
-			this.callHook(f.(htypes.Map), &rep)
+			this.callHook(&f, &rep)
 		}
 		if rep.Error != nil {
 			res.Error = rep.Error
@@ -91,37 +97,37 @@ func (this *Service) Upload(req *UploadRequest, res *core.SlotResponse) {
 
 	var results []htypes.Map
 	for _, f := range *req.Files {
-		fd := f.(htypes.Map)
-		name := fd["name"].(string)
-		data := fd["data"].([]byte)
-
 		var file SvsFile
 		var fp string
-		hash := this.computeHash(data)
-		err := this.db.Where("hash = ?", hash).Find(&file).Error
+		hash := this.computeHash(f.Data)
+		err := this.db.First(&file, "hash=?", hash).Error
 		if err == nil {
 			fp = file.Path
 		} else {
+			if gorm.ErrRecordNotFound != err {
+				this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
+				return
+			}
 			if this.conf.Storage == storageMinio {
-				buf := bytes.NewReader(data)
-				fp = fmt.Sprintf("%s%s", hrandom.UuidWithoutDash(), path.Ext(name))
-				_, err := this.minioClient.PutObject(context.TODO(), this.conf.MinioBucket, fp, buf, int64(len(data)), minio.PutObjectOptions{})
+				buf := bytes.NewReader(f.Data)
+				fp = fmt.Sprintf("%s%s", hrandom.UuidWithoutDash(), path.Ext(f.Name))
+				_, err := this.minioClient.PutObject(context.TODO(), this.conf.MinioBucket, fp, buf, int64(len(f.Data)), minio.PutObjectOptions{})
 				if err != nil {
 					this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
 					return
 				}
 			} else {
-				fp = fmt.Sprintf("%s/%s%s", repositoryDir, hrandom.UuidWithoutDash(), path.Ext(name))
-				if err := hio.CreateFile(fp, data); err != nil {
+				fp = fmt.Sprintf("%s/%s%s", repositoryDir, hrandom.UuidWithoutDash(), path.Ext(f.Name))
+				if err := hio.CreateFile(fp, f.Data); err != nil {
 					this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
 					return
 				}
 			}
 
 			file.Path = fp
-			file.Name = name
+			file.Name = f.Name
 			file.Hash = hash
-			file.Size = len(data)
+			file.Size = len(f.Data)
 			if err := this.db.Save(&file).Error; err != nil {
 				this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
 				return
@@ -129,7 +135,7 @@ func (this *Service) Upload(req *UploadRequest, res *core.SlotResponse) {
 		}
 
 		results = append(results, htypes.Map{
-			"name": name,
+			"name": f.Name,
 			"path": fp,
 		})
 	}
