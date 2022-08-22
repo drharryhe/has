@@ -123,7 +123,10 @@ func (this *Service) mountHook(anchor interface{}) {
 		}
 
 		ctxType = mtype.In(2)
-		if ctxType.Kind() != reflect.Map {
+		if ctxType.Kind() != reflect.Ptr {
+			continue
+		}
+		if ctxType.Elem().Name() != "UpdataFileItem" {
 			continue
 		}
 
@@ -140,7 +143,7 @@ func (this *Service) mountHook(anchor interface{}) {
 	}
 }
 
-func (this *Service) callHook(fd htypes.Map, res *core.CallerResponse) {
+func (this *Service) callHook(fd *UploadFileItem, res *core.CallerResponse) {
 	if !hconf.IsDebug() {
 		defer func() {
 			e := recover()

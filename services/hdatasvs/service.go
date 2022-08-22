@@ -295,12 +295,18 @@ func (this *Service) convertGo2SqlType(v interface{}) interface{} {
 		return &sql.NullBool{}
 	case reflect.String:
 		return &sql.NullString{}
+	case reflect.Struct:
+		return &sql.NullTime{}
 	default:
 		return v
 	}
 }
 
 func (this *Service) convertSql2GoValue(v interface{}, kind reflect.Kind) interface{} {
+	if reflect.TypeOf(v).Kind() == reflect.Ptr && reflect.ValueOf(v).Elem().Type().Name() == "NullTime" {
+		return v.(*sql.NullTime).Time.Unix()
+	}
+
 	switch kind {
 	case reflect.Float64, reflect.Float32:
 		return v.(*sql.NullFloat64).Float64
@@ -321,7 +327,10 @@ func (this *Service) buildDimValues(ins interface{}, fMap map[string]iField, dim
 	if dims == nil || len(dims) == 0 {
 		for i := 0; i < v.Elem().NumField(); i++ {
 			k := v.Elem().Field(i).Kind()
-			if k == reflect.Map || k == reflect.Slice || k == reflect.Struct || k == reflect.Ptr {
+			if k == reflect.Map || k == reflect.Slice || k == reflect.Ptr {
+				continue
+			}
+			if k == reflect.Struct && v.Elem().Field(i).Type().Name() != "Time" {
 				continue
 			}
 			f := this.convertGo2SqlType(v.Elem().Field(i).Interface())
@@ -330,7 +339,10 @@ func (this *Service) buildDimValues(ins interface{}, fMap map[string]iField, dim
 	} else {
 		for _, s := range dims {
 			k := v.Elem().FieldByName(fMap[s].Name()).Kind()
-			if k == reflect.Map || k == reflect.Slice || k == reflect.Struct || k == reflect.Ptr {
+			if k == reflect.Map || k == reflect.Slice || k == reflect.Ptr {
+				continue
+			}
+			if k == reflect.Struct && v.Elem().FieldByName(fMap[s].Name()).Type().Name() != "Time" {
 				continue
 			}
 			f := this.convertGo2SqlType(v.Elem().FieldByName(fMap[s].Name()).Interface())
