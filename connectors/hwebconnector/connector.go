@@ -289,7 +289,7 @@ func (this *Connector) ParseBodyParams(c *fiber.Ctx, ps htypes.Map) *herrors.Err
 	}
 	bs := c.Request().Body()
 	if hconf.IsDebug() {
-		hlogger.Info("原始消息: ", string(bs))
+		hlogger.Info("api: %s -> body: %s", string(c.Request().RequestURI()), string(bs))
 	}
 	if len(bs) > 0 {
 		res := make(htypes.Map)
