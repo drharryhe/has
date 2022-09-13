@@ -24,6 +24,10 @@ type DownloadRequest struct {
 }
 
 func (this *Service) Download(req *DownloadRequest, res *core.SlotResponse) {
+	if req.Path == nil {
+		herrors.ErrSysInternal.New("未传path").D("未传path")
+		return
+	}
 	if err := this.isValidPath(*req.Path); err != nil {
 		res.Error = err
 		return

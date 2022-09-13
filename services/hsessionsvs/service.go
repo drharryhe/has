@@ -36,11 +36,7 @@ func (this *Service) Open(s core.IServer, instance core.IService, options htypes
 		return err
 	}
 
-	db, err := this.UsePlugin("DatabasePlugin").(*hdatabaseplugin.Plugin).AddObjects(this.conf.DatabaseKey, this.Objects())
-	if err != nil {
-		return err
-	}
-	this.db = db
+	this.db = this.UsePlugin("DatabasePlugin").(*hdatabaseplugin.Plugin).Capability().(map[string]*gorm.DB)[this.conf.DatabaseKey]
 
 	this.cache = this.UsePlugin("MemCachePlugin").(*hmemcacheplugin.Plugin).GetCache(this.Class())
 	if this.conf.SessionsPerUser <= 0 {

@@ -127,12 +127,16 @@ func (this *Service) Open(s core.IServer, instance core.IService, options htypes
 				this.objectsByKey[obj.key] = obj
 				this.objectsByName[n] = obj
 
-				if err := this.getDB(obj.database).AutoMigrate(o); err != nil {
-					if hconf.IsDebug() {
-						_ = herrors.ErrSysInternal.New(err.Error())
-					} else {
-						hlogger.Error(herrors.ErrSysInternal.New(err.Error()))
+				if !plugin.Conf.SkipAutoMigrate {
+					if err := this.getDB(obj.database).AutoMigrate(o); err != nil {
+						if hconf.IsDebug() {
+							_ = herrors.ErrSysInternal.New(err.Error())
+						} else {
+							hlogger.Error(herrors.ErrSysInternal.New(err.Error()))
+						}
 					}
+					plugin.Conf.SkipAutoMigrate = true
+					hconf.Save()
 				}
 			}
 		}

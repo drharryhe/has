@@ -53,7 +53,7 @@ func (this *Service) Open(s core.IServer, instance core.IService, options htypes
 		return err
 	}
 
-	this.db, err = this.UsePlugin("DatabasePlugin").(*hdatabaseplugin.Plugin).AddObjects(this.conf.DatabaseKey, this.Objects())
+	this.db = this.UsePlugin("DatabasePlugin").(*hdatabaseplugin.Plugin).Capability().(map[string]*gorm.DB)[this.conf.DatabaseKey]
 	if err != nil {
 		return err
 	}

@@ -135,7 +135,7 @@ func (this *Service) CheckLogin(req *CheckLoginRequest, res *core.SlotResponse) 
 			this.saveUser(&u)
 		}
 	} else {
-		u.User = "root"
+		u.User = this.conf.SuperName
 		u.ID = 0
 	}
 

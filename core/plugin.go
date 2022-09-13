@@ -3,6 +3,7 @@ package core
 import (
 	"github.com/drharryhe/has/common/hconf"
 	"github.com/drharryhe/has/common/herrors"
+	"github.com/drharryhe/has/common/hlogger"
 	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/utils/hrandom"
 	"github.com/drharryhe/has/utils/hruntime"
@@ -24,7 +25,7 @@ func (this *BasePlugin) Open(s IServer, ins IPlugin) *herrors.Error {
 	this.class = hruntime.GetObjectName(ins.(IEntity).Config())
 
 	hconf.Load(ins.(IEntity).Config())
-
+	hlogger.Info("Plugin %s Registered...", this.class)
 	return nil
 }
 
