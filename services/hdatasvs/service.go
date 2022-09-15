@@ -135,10 +135,11 @@ func (this *Service) Open(s core.IServer, instance core.IService, options htypes
 							hlogger.Error(herrors.ErrSysInternal.New(err.Error()))
 						}
 					}
-					plugin.Conf.SkipAutoMigrate = true
-					hconf.Save()
 				}
 			}
+			hlogger.Info("AutoMigrate Done")
+			plugin.Conf.SkipAutoMigrate = true
+			hconf.Save()
 		}
 
 		if ops.Views != nil {
