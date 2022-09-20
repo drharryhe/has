@@ -303,7 +303,7 @@ func (this *Service) convertGo2SqlType(v interface{}) interface{} {
 	case reflect.Struct:
 		return &sql.NullTime{}
 	default:
-		return v
+		return &v
 	}
 }
 
@@ -331,25 +331,25 @@ func (this *Service) buildDimValues(ins interface{}, fMap map[string]iField, dim
 	v := reflect.ValueOf(hruntime.CloneObject(ins))
 	if dims == nil || len(dims) == 0 {
 		for i := 0; i < v.Elem().NumField(); i++ {
-			k := v.Elem().Field(i).Kind()
-			if k == reflect.Map || k == reflect.Slice || k == reflect.Ptr {
-				continue
-			}
-			if k == reflect.Struct && v.Elem().Field(i).Type().Name() != "Time" {
-				continue
-			}
+			//k := v.Elem().Field(i).Kind()
+			//if k == reflect.Map || k == reflect.Slice || k == reflect.Ptr {
+			//	continue
+			//}
+			//if k == reflect.Struct && v.Elem().Field(i).Type().Name() != "Time" {
+			//	continue
+			//}
 			f := this.convertGo2SqlType(v.Elem().Field(i).Interface())
 			ret = append(ret, f)
 		}
 	} else {
 		for _, s := range dims {
-			k := v.Elem().FieldByName(fMap[s].Name()).Kind()
-			if k == reflect.Map || k == reflect.Slice || k == reflect.Ptr {
-				continue
-			}
-			if k == reflect.Struct && v.Elem().FieldByName(fMap[s].Name()).Type().Name() != "Time" {
-				continue
-			}
+			//k := v.Elem().FieldByName(fMap[s].Name()).Kind()
+			//if k == reflect.Map || k == reflect.Slice || k == reflect.Ptr {
+			//	continue
+			//}
+			//if k == reflect.Struct && v.Elem().FieldByName(fMap[s].Name()).Type().Name() != "Time" {
+			//	continue
+			//}
 			f := this.convertGo2SqlType(v.Elem().FieldByName(fMap[s].Name()).Interface())
 			ret = append(ret, f)
 		}
@@ -361,9 +361,9 @@ func (this *Service) buildDimValues(ins interface{}, fMap map[string]iField, dim
 func (this *Service) bindDimValues(fMap map[string]iField, dims []string, values []interface{}) map[string]interface{} {
 	ret := make(map[string]interface{})
 	for i, d := range dims {
-		if fMap[d].Kind() == reflect.Struct || fMap[d].Kind() == reflect.Slice {
-			continue
-		}
+		//if fMap[d].Kind() == reflect.Struct || fMap[d].Kind() == reflect.Slice {
+		//	continue
+		//}
 		ret[d] = this.convertSql2GoValue(values[i], fMap[d].Kind())
 	}
 	return ret

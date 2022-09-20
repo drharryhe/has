@@ -422,12 +422,12 @@ func (this *Service) Query(req *QueryRequest, res *core.SlotResponse) {
 			continue
 		}
 
-		if f.kind == reflect.Slice || f.kind == reflect.Struct {
-			continue
-		} else {
+		//if f.kind == reflect.Slice || f.kind == reflect.Struct {
+		//	continue
+		//} else {
 			dims = append(dims, f.Key())
 			selectFieldNames = append(selectFieldNames, f.SQL())
-		}
+		//}
 	}
 
 	if len(dims) == 0 {
