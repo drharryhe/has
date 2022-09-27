@@ -238,8 +238,16 @@ func (this *Service) callSlotHandler(slot *Slot, params htypes.Map) (htypes.Any,
 		req = &params
 		if slot.ReqInstance != nil {
 			req = hruntime.CloneObject(slot.ReqInstance)
-			bs, _ := jsoniter.Marshal(params)
-			_ = jsoniter.Unmarshal(bs, req)
+			this.BoolTypeTransform(&params)
+			bs, err := jsoniter.Marshal(params)
+			if err != nil {
+				hlogger.Error(err)
+			}
+
+			err = jsoniter.Unmarshal(bs, req)
+			if err != nil {
+				hlogger.Error(err)
+			}
 		}
 		//if err := hruntime.Map2Struct(params, req); err != nil {
 		//	return nil, herrors.ErrSysInternal.New(err.Error())
@@ -253,6 +261,17 @@ func (this *Service) callSlotHandler(slot *Slot, params htypes.Map) (htypes.Any,
 		}
 	} else {
 		return nil, herrors.ErrCallerInvalidRequest.New("service [%s] slot [%s] not found", this.class, slot).D("failed to call slot")
+	}
+}
+
+func (this *Service) BoolTypeTransform(params *htypes.Map) {
+	for key, v := range *params {
+		if v == "false" {
+			(*params)[key] = false
+		}
+		if v == "true" {
+			(*params)[key] = true
+		}
 	}
 }
 

@@ -1667,7 +1667,8 @@ func (this *Service) parseObject(name string, o interface{}) (*object, *herrors.
 		of.kind = f.Type.Kind()
 		if of.kind == reflect.Struct {
 			if f.Type.Name() == "Time" {
-				of.kind = reflect.Int64
+				// 时间类型使用Int64时出现了很多数据没被查询到的情况
+				of.kind = reflect.String
 			} else {
 				of.kind = reflect.Map
 			}
