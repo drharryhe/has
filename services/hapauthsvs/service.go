@@ -51,7 +51,7 @@ func (this *Service) Open(s core.IServer, instance core.IService, options htypes
 	plugin := this.UsePlugin("DatabasePlugin").(*hdatabaseplugin.Plugin)
 	this.db = plugin.Capability().(map[string]*gorm.DB)[this.conf.DatabaseKey]
 
-	this.db.AutoMigrate(this.Objects())
+	this.db.AutoMigrate(&SvsApAuthUser{})
 
 	if this.conf.SessionService == "" {
 		return herrors.ErrSysInternal.New("[SessionService] not configured")

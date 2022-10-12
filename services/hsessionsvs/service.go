@@ -40,7 +40,7 @@ func (this *Service) Open(s core.IServer, instance core.IService, options htypes
 
 	this.cache = this.UsePlugin("MemCachePlugin").(*hmemcacheplugin.Plugin).GetCache(this.Class())
 
-	this.db.AutoMigrate(this.Objects())
+	this.db.AutoMigrate(&SvsSessionToken{})
 	if this.conf.SessionsPerUser <= 0 {
 		this.conf.SessionsPerUser = defaultSessionPerUser
 	}
