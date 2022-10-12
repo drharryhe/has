@@ -85,7 +85,7 @@ func (this *Service) Config() core.IEntityConf {
 
 func (this *Service) Objects() []interface{} {
 	return []interface{}{
-		SvsApAuthUser{},
+		&SvsApAuthUser{},
 	}
 }
 

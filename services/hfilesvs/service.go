@@ -43,7 +43,7 @@ type Service struct {
 
 func (this *Service) Objects() []interface{} {
 	return []interface{}{
-		SvsFile{},
+		&SvsFile{},
 	}
 }
 
