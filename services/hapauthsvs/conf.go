@@ -8,6 +8,7 @@ type ApAuthService struct {
 	core.ServiceConf
 
 	DatabaseKey            string
+	AutoMigrate			   bool
 	SessionService         string
 	SessionCreateSlot      string
 	SessionVerifySlot      string

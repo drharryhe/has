@@ -1,6 +1,7 @@
 package hsessionsvs
 
 import (
+	"github.com/drharryhe/has/common/hconf"
 	cache2 "github.com/patrickmn/go-cache"
 	"gorm.io/gorm"
 
@@ -39,8 +40,11 @@ func (this *Service) Open(s core.IServer, instance core.IService, options htypes
 	this.db = this.UsePlugin("DatabasePlugin").(*hdatabaseplugin.Plugin).Capability().(map[string]*gorm.DB)[this.conf.DatabaseKey]
 
 	this.cache = this.UsePlugin("MemCachePlugin").(*hmemcacheplugin.Plugin).GetCache(this.Class())
-
-	this.db.AutoMigrate(&SvsSessionToken{})
+	if this.conf.AutoMigrate {
+		this.db.AutoMigrate(&SvsSessionToken{})
+		this.conf.AutoMigrate = false
+		hconf.Save()
+	}
 	if this.conf.SessionsPerUser <= 0 {
 		this.conf.SessionsPerUser = defaultSessionPerUser
 	}

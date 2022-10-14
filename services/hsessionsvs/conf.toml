@@ -8,3 +8,4 @@ MagicToken = 'a1b2@c3d4'
 Name = 'session'
 SessionsPerUser = 1
 TokenExpire = 10080
+AutoMigrate = true

@@ -1,5 +1,6 @@
 [ApAuthService]
 DefaultPwd = 'Qaz@2020'
+AutoMigrate = true
 Disabled = false
 EID = 'c21f4f863a974fb182c9ae4cf05dc142'
 InAddressField = 'IP'

@@ -6,6 +6,7 @@ type SessionService struct {
 	core.ServiceConf
 
 	DatabaseKey     string
+	AutoMigrate     bool
 	TokenExpire     int
 	SessionsPerUser int
 	CheckIP         bool

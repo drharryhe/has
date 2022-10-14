@@ -57,7 +57,11 @@ func (this *Service) Open(s core.IServer, instance core.IService, options htypes
 	if err != nil {
 		return err
 	}
-	this.db.AutoMigrate(&SvsFile{})
+	if this.conf.AutoMigrate {
+		this.db.AutoMigrate(&SvsFile{})
+		this.conf.AutoMigrate = false
+		hconf.Save()
+	}
 	if this.conf.Storage == "" {
 		this.conf.Storage = storageFS
 	}
