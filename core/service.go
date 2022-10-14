@@ -105,7 +105,7 @@ func (this *Service) Open(s IServer, instance IService, options htypes.Any) *her
 	this.class = hruntime.GetObjectName(instance.(IEntity).Config())
 	this.instance = instance
 
-	hconf.Load(this.instance.(IEntity).Config())
+	//hconf.Load(this.instance.(IEntity).Config())
 
 	this.server = s
 	if this.Name() == "" {
@@ -247,6 +247,7 @@ func (this *Service) callSlotHandler(slot *Slot, params htypes.Map) (htypes.Any,
 			err = jsoniter.Unmarshal(bs, req)
 			if err != nil {
 				hlogger.Error(err)
+				return nil, herrors.ErrSysInternal.New("请求参数错误")
 			}
 		}
 		//if err := hruntime.Map2Struct(params, req); err != nil {

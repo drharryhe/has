@@ -7,6 +7,7 @@ import (
 	"github.com/gofiber/websocket/v2"
 	jsoniter "github.com/json-iterator/go"
 	"io"
+	"net/http"
 	"net/url"
 	"strings"
 
@@ -82,6 +83,10 @@ func (this *Connector) Open(gw core.IAPIGateway, ins core.IAPIConnector) *herror
 
 	this.App.Get("/:version/:api", this.handleServiceAPI)
 	this.App.Post("/:version/:api", this.handleServiceAPI)
+	this.App.Get("/ping", func(ctx *fiber.Ctx) error {
+		ctx.Status(http.StatusOK)
+		return ctx.SendString("pong")
+	})
 
 	go func() {
 		if this.conf.Tls {
