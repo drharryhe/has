@@ -1,7 +1,9 @@
 package hapauthsvs
 
 import (
+	"fmt"
 	"gorm.io/gorm"
+	"time"
 
 	"github.com/drharryhe/has/common/hconf"
 	"github.com/drharryhe/has/common/herrors"
@@ -31,16 +33,30 @@ func (this *Service) Login(req *LoginRequest, res *core.SlotResponse) {
 	isRoot := false
 	if *req.Name == this.conf.SuperName {
 		if this.conf.SuperFailed >= this.conf.SuperFails {
-			this.Response(res, nil, herrors.ErrUserUnauthorizedAct.New(strUserLocked))
+			// 添加锁定时间
+			if this.conf.LockTime == "" {
+				this.conf.LockTime = time.Now().Format("2006-01-02 15:04:05")
+				hconf.Save()
+			}
+			// 解锁
+			lockTime, _ := time.Parse("2006-01-02 15:04:05", this.conf.LockTime)
+			if time.Now().Sub(lockTime) * time.Second >= time.Duration(this.conf.UnlockTime) * time.Second {
+				this.conf.LockTime = ""
+				hconf.Save()
+				goto UNLOCK
+			}
+			this.Response(res, nil, herrors.ErrUserUnauthorizedAct.New(fmt.Sprintf(strUserLocked, this.conf.UnlockTime)))
 			return
 		}
+		UNLOCK:
 		if this.conf.SuperPwd == "" || this.conf.SuperPwd != this.pwdEncodingFunc(pwd) {
 			this.conf.SuperFailed++
 			hconf.Save()
 			this.Response(res, nil, herrors.ErrUserInvalidAct.New(strInvalidUserOrPassword))
 			return
 		}
-
+		this.conf.SuperFailed = 0
+		hconf.Save()
 		isRoot = true
 	}
 
@@ -56,15 +72,20 @@ func (this *Service) Login(req *LoginRequest, res *core.SlotResponse) {
 		}
 
 		if u.Locked {
-			this.Response(res, nil, herrors.ErrUserUnauthorizedAct.New(strUserLocked))
+			if time.Now().Sub(u.LockTime) *time.Second >= time.Duration(this.conf.UnlockTime) * time.Second {
+				u.Locked = false
+				goto USERUNLOCK
+			}
+			this.Response(res, nil, herrors.ErrUserUnauthorizedAct.New(fmt.Sprintf(strUserLocked, this.conf.UnlockTime)))
 			return
 		}
-
+		USERUNLOCK:
 		if u.Password != this.pwdEncodingFunc(pwd) {
 			this.Response(res, nil, herrors.ErrUserInvalidAct.New(strInvalidUserOrPassword))
 			u.Fails++
 			if u.Fails >= this.conf.LockAfterFails {
 				u.Locked = true
+				u.LockTime = time.Now()
 			}
 			this.saveUser(&u)
 			return
@@ -329,6 +350,7 @@ func (this *Service) AddUser(req *AddUserRequest, res *core.SlotResponse) {
 	}
 	u.Password = this.pwdEncodingFunc(pwd)
 	u.User = *req.Name
+	u.LockTime = time.Now()
 
 	if err := this.db.Save(&u).Error; err != nil {
 		this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))

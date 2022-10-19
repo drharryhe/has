@@ -2,7 +2,7 @@ package hapauthsvs
 
 var (
 	strInvalidUserOrPassword          = "invalid user or password"
-	strUserLocked                     = "user locked"
+	strUserLocked                     = "User Locked, Please wait %d seconds and try again"
 	strUserExists                     = "user already exits"
 	strUserNotExits                   = "user not exists"
 	strTooWeakPassword                = "too weak password"

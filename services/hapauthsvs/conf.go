@@ -8,7 +8,7 @@ type ApAuthService struct {
 	core.ServiceConf
 
 	DatabaseKey            string
-	AutoMigrate			   bool
+	AutoMigrate            bool
 	SessionService         string
 	SessionCreateSlot      string
 	SessionVerifySlot      string
@@ -25,7 +25,9 @@ type ApAuthService struct {
 	SuperName              string
 	SuperPwd               string
 	SuperFails             int
-	SuperFailed			   int
+	SuperFailed            int
+	UnlockTime             int
+	LockTime               string
 	LockAfterFails         int
 	OutAddressField        string
 	OutAgentField          string
