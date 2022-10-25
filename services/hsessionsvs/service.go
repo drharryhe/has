@@ -75,19 +75,19 @@ func (this *Service) Objects() []interface{} {
 
 func (this *Service) checkToken(st *SvsSessionToken, req *VerifyTokenRequest) *herrors.Error {
 	if this.conf.CheckIP && (req.IP == nil || st.IP != *req.IP) {
-		return herrors.ErrCallerInvalidRequest.New("invalid token IP").D(strInvalidToken)
+		return herrors.ErrCallerInvalidRequest.New(strInvalidToken).D("invalid token IP")
 	}
 
 	if this.conf.CheckUser && (req.User == nil || st.User != *req.User) {
-		return herrors.ErrCallerInvalidRequest.New("invalid token user").D(strInvalidToken)
+		return herrors.ErrCallerInvalidRequest.New(strInvalidToken).D("invalid token user")
 	}
 
 	if this.conf.CheckAgent && (req.Agent == nil || st.Agent != *req.Agent) {
-		return herrors.ErrCallerInvalidRequest.New("invalid token agent").D(strInvalidToken)
+		return herrors.ErrCallerInvalidRequest.New(strInvalidToken).D("invalid token agent")
 	}
 
 	if st.Validity.Format("2006-01-02 15:04:05") < hdatetime.Now() {
-		return herrors.ErrCallerInvalidRequest.New("token expired").D(strInvalidToken)
+		return herrors.ErrCallerInvalidRequest.New(strInvalidToken).D("token expired")
 	}
 	return nil
 }
