@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"runtime/debug"
 	"syscall"
 
 	"go.uber.org/atomic"
@@ -258,6 +259,7 @@ func (this *ServerImplement) RequestService(service string, slot string, params 
 			e := recover()
 			if e != nil {
 				hlogger.Error(herrors.ErrSysInternal.New(e.(error).Error()))
+				hlogger.Error(string(debug.Stack()))
 			}
 		}()
 	}
