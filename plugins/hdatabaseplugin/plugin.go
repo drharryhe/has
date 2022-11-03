@@ -85,7 +85,7 @@ func (this *Plugin) AddObjectsToDefaultDB(objs []interface{}) (*gorm.DB, *herror
 
 func (this *Plugin) AddObjects(key string, objs []interface{}) (*gorm.DB, *herrors.Error) {
 	var db *gorm.DB
-	if !this.Conf.SkipAutoMigrate {
+	if this.Conf.AutoMigrate {
 		var err *herrors.Error
 		db, err = this.AutoMigrate(key, objs)
 		if err != nil {

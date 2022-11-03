@@ -1,5 +1,5 @@
 [DatabasePlugin]
-SkipAutoMigrate = true
+AutoMigrate = true
 [[DatabasePlugin.Connection]]
 Key = 'mysql'
 Server = "127.0.0.1"
