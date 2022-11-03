@@ -127,7 +127,7 @@ func (this *Service) Open(s core.IServer, instance core.IService, options htypes
 				this.objectsByKey[obj.key] = obj
 				this.objectsByName[n] = obj
 
-				if !plugin.Conf.SkipAutoMigrate {
+				if this.conf.AutoMigrate {
 					if err := this.getDB(obj.database).AutoMigrate(o); err != nil {
 						if hconf.IsDebug() {
 							_ = herrors.ErrSysInternal.New(err.Error())
@@ -138,7 +138,7 @@ func (this *Service) Open(s core.IServer, instance core.IService, options htypes
 				}
 			}
 			hlogger.Info("AutoMigrate Done")
-			plugin.Conf.SkipAutoMigrate = true
+			this.conf.AutoMigrate = false
 			hconf.Save()
 		}
 
