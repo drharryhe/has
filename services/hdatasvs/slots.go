@@ -687,7 +687,7 @@ func (this *Service) View(req *ViewRequest, res *core.SlotResponse) {
 	if lmt.count > 0 {
 		scope = scope.Limit(lmt.count).Offset(lmt.offset)
 	}
-	rows, err := scope.Rows()
+	rows, err := scope.Debug().Rows()
 	if err != nil {
 		this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
 		return

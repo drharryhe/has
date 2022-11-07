@@ -15,5 +15,5 @@ type SvsApAuthUser struct {
 	LastLogin string    `json:"last_login" gorm:"size:19"`                 //最后一次登录
 	Locked    bool      `json:"locked"`                                    //账号是否被锁定
 	Fails     int       `json:"-"`                                         //登录失败次数
-	LockTime  time.Time `json:"lock_time"`                                 // 锁定时间
+	LockTime  *time.Time `json:"lock_time"`                                 // 锁定时间
 }

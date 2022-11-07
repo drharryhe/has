@@ -2136,7 +2136,7 @@ func (this *Service) parseOrderBy(fldMap map[string]iField, s string) (*ordering
 	}
 	order := &ordering{}
 	order.object = f.Owner().object.key
-	order.column = f.Key()
+	order.column = f.Owner().fieldCol
 	if len(ss) == 1 || strings.ToUpper(strings.Trim(ss[1], " ")) == "ASC" {
 		order.direction = "ASC"
 	} else {

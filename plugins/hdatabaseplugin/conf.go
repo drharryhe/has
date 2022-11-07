@@ -4,7 +4,6 @@ import "github.com/drharryhe/has/core"
 
 type DatabasePlugin struct {
 	core.PluginConf
-	AutoMigrate bool
 	Connections []connection
 }
 

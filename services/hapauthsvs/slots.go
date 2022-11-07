@@ -72,7 +72,7 @@ func (this *Service) Login(req *LoginRequest, res *core.SlotResponse) {
 		}
 
 		if u.Locked {
-			if time.Now().Sub(u.LockTime) *time.Second >= time.Duration(this.conf.UnlockTime) * time.Second {
+			if time.Now().Sub(*u.LockTime) *time.Second >= time.Duration(this.conf.UnlockTime) * time.Second {
 				u.Locked = false
 				goto USERUNLOCK
 			}
@@ -85,7 +85,8 @@ func (this *Service) Login(req *LoginRequest, res *core.SlotResponse) {
 			u.Fails++
 			if u.Fails >= this.conf.LockAfterFails {
 				u.Locked = true
-				u.LockTime = time.Now()
+				t := time.Now()
+				u.LockTime = &t
 			}
 			this.saveUser(&u)
 			return
@@ -350,7 +351,8 @@ func (this *Service) AddUser(req *AddUserRequest, res *core.SlotResponse) {
 	}
 	u.Password = this.pwdEncodingFunc(pwd)
 	u.User = *req.Name
-	u.LockTime = time.Now()
+	t := time.Now()
+	u.LockTime = &t
 
 	if err := this.db.Save(&u).Error; err != nil {
 		this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
