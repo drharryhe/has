@@ -32,14 +32,6 @@ type BaseConnector struct {
 	Packer   IAPIDataPacker
 	instance IAPIConnector
 	class    string
-	Options  *ConnectorOptions
-}
-
-type DecoderFunc func(body interface{}) (htypes.Map, *herrors.Error)
-
-type ConnectorOptions struct {
-	// The key of the map is MIME, should be like application/json or fiber.MIMEApplicationJSON.
-	BodyDecoders map[string]DecoderFunc
 }
 
 func (this *BaseConnector) Open(gw IAPIGateway, ins IAPIConnector) *herrors.Error {

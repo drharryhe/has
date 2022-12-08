@@ -1,6 +1,7 @@
 package core
 
 import (
+	"github.com/gofiber/websocket/v2"
 	"strings"
 
 	"github.com/afex/hystrix-go/hystrix"
@@ -149,6 +150,21 @@ func (this *APIGateWayImplement) I18n() IAPIi18n {
 	return this.i18n
 }
 
+func (this *APIGateWayImplement) PreRequestMiddleware(version, api string, params htypes.Map) (err *herrors.Error) {
+	for _, m := range this.middlewares {
+		if m.Type() == MiddlewareTypeIn || m.Type() == MiddlewareTypeInOut {
+			stop, err := m.HandleIn(0, version, api, params)
+			if err != nil {
+				return err
+			}
+			if stop {
+				break
+			}
+		}
+	}
+	return
+}
+
 func (this *APIGateWayImplement) RequestAPI(version string, api string, params htypes.Map) (ret htypes.Any, err *herrors.Error) {
 	a := this.apiSet[version]
 	if a == nil {
@@ -163,17 +179,20 @@ func (this *APIGateWayImplement) RequestAPI(version string, api string, params h
 		return nil, herrors.ErrCallerInvalidRequest.New("api [%s] disabled", api)
 	}
 
-	for _, m := range this.middlewares {
-		if m.Type() == MiddlewareTypeIn || m.Type() == MiddlewareTypeInOut {
-			stop, err := m.HandleIn(0, version, api, params)
-			if err != nil {
-				return nil, err
-			}
-			if stop {
-				break
-			}
-		}
+	if err = this.PreRequestMiddleware(version, api, params); err != nil {
+		return nil, err
 	}
+	//for _, m := range this.middlewares {
+	//	if m.Type() == MiddlewareTypeIn || m.Type() == MiddlewareTypeInOut {
+	//		stop, err := m.HandleIn(0, version, api, params)
+	//		if err != nil {
+	//			return nil, err
+	//		}
+	//		if stop {
+	//			break
+	//		}
+	//	}
+	//}
 
 	//加入熔断控制
 	if this.conf.UseBreaker {
@@ -210,6 +229,59 @@ func (this *APIGateWayImplement) RequestAPI(version string, api string, params h
 	}
 
 	return ret, err
+}
+
+func (this *APIGateWayImplement) RequestWSAPI(version, api string, params htypes.Map, c *websocket.Conn) (ret htypes.Any, err *herrors.Error) {
+	a := this.apiSet[version]
+	if a == nil {
+		return nil, herrors.ErrCallerInvalidRequest.New("api version [%s] not supported", version)
+	}
+
+	v := a[api]
+	if v == nil {
+		return nil, herrors.ErrCallerInvalidRequest.New("api  [%s] not supported", api)
+	}
+	if v.Disabled {
+		return nil, herrors.ErrCallerInvalidRequest.New("api [%s] disabled", api)
+	}
+
+	if err = this.PreRequestMiddleware(version, api, params); err != nil {
+		return nil, err
+	}
+	//for _, m := range this.middlewares {
+	//	if m.Type() == MiddlewareTypeIn || m.Type() == MiddlewareTypeInOut {
+	//		stop, err := m.HandleIn(0, version, api, params)
+	//		if err != nil {
+	//			return nil, err
+	//		}
+	//		if stop {
+	//			break
+	//		}
+	//	}
+	//}
+
+	//加入熔断控制
+	if this.conf.UseBreaker {
+		cmd := this.cmdName(v.Name, params)
+
+		if hystrix.GetCircuitSettings()[cmd] == nil {
+			hystrix.ConfigureCommand(cmd, *this.breakCmdConfig)
+		}
+
+		breakerErr := hystrix.Do(cmd, func() error {
+			ret, err = this.server.RequestService(v.EndPoint.Service, v.EndPoint.Slot, params)
+			return nil
+		}, func(e error) error {
+			return herrors.ErrSysBusy.New(e.Error())
+		})
+
+		if breakerErr != nil {
+			return nil, herrors.ErrSysInternal.New(breakerErr.Error())
+		}
+	} else {
+		ret, err = this.server.RequestService(v.EndPoint.Service, v.EndPoint.Slot, params)
+	}
+	return
 }
 
 func (this *APIGateWayImplement) Class() string {

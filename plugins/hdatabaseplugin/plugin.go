@@ -408,7 +408,7 @@ func (this *Plugin) Dsn(conn *connection, new bool) string {
 			return fmt.Sprintf("%s:%s@tcp(%s:%d)/",
 				conn.User, conn.Pwd, conn.Server, conn.Port)
 		} else {
-			return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=true&loc=Local",
+			return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=true&loc=Asia%%2FShanghai",
 				conn.User, conn.Pwd, conn.Server, conn.Port, conn.Name)
 
 		}

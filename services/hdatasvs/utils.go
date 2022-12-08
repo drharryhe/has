@@ -2,11 +2,10 @@ package hdatasvs
 
 import (
 	"fmt"
-
-	"gorm.io/gorm"
-
 	"github.com/drharryhe/has/common/herrors"
 	"github.com/drharryhe/has/common/htypes"
+	"gorm.io/gorm"
+	"reflect"
 )
 
 func (this *Service) ObjectConditionValues(key string, conds []string) (htypes.Map, *herrors.Error) {
@@ -63,7 +62,23 @@ func (this *Service) CheckTableName(o *object, data htypes.Map, createIfNotExist
 		if data[f] == nil {
 			return "", herrors.ErrSysInternal.New("table naming field [%s] value required", f)
 		} else {
-			tab = fmt.Sprintf("%s_%s%v", tab, f, data[f])
+			var result string
+			SWLevel1:
+			switch o.iFieldMap[f].Kind() {
+			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+				switch reflect.TypeOf(data[f]).Kind() {
+				case reflect.Int64:
+					result = fmt.Sprintf("%d", data[f].(int64))
+					break SWLevel1
+				default:
+					result = fmt.Sprintf("%.0f", data[f].(float64))
+				}
+			case reflect.String:
+				result = data[f].(string)
+			default:
+				result = fmt.Sprintf("%v", data[f])
+			}
+			tab = fmt.Sprintf("%s_%s%v", tab, f, result)
 		}
 	}
 

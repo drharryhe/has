@@ -418,7 +418,7 @@ func (this *Service) Query(req *QueryRequest, res *core.SlotResponse) {
 			return
 		}
 
-		if f.kind == reflect.Map || f.kind == reflect.Ptr {
+		if f.kind == reflect.Map {
 			continue
 		}
 
@@ -541,6 +541,8 @@ func (this *Service) Query(req *QueryRequest, res *core.SlotResponse) {
 	} else {
 		this.Response(res, records, nil)
 	}
+	// 不清空可能会影响到其它的 this.db
+	this.getDB(o.database).Statement.Table = ""
 }
 
 type ViewRequest struct {
