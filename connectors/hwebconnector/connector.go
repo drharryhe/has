@@ -7,6 +7,7 @@ import (
 	fastwebsocket "github.com/fasthttp/websocket"
 	"github.com/gofiber/websocket/v2"
 	jsoniter "github.com/json-iterator/go"
+	uuid "github.com/satori/go.uuid"
 	"io"
 	"net/http"
 	"net/url"
@@ -36,9 +37,9 @@ func New() *Connector {
 type Connector struct {
 	core.BaseConnector
 
-	conf          WebConnector
-	App           *fiber.App
-	WsConnectPool map[string]*websocket.Conn
+	conf      WebConnector
+	App       *fiber.App
+	WsConnMap map[string]*websocket.Conn // ws_id: ws
 }
 
 func (this *Connector) Open(gw core.IAPIGateway, ins core.IAPIConnector) *herrors.Error {
@@ -58,6 +59,8 @@ func (this *Connector) Open(gw core.IAPIGateway, ins core.IAPIConnector) *herror
 		BodyLimit: this.conf.BodyLimit * 1024 * 1024,
 	})
 
+	this.WsConnMap = make(map[string]*websocket.Conn)
+
 	this.App.Use(cors.New())
 	if hconf.IsDebug() {
 		this.App.Get("/error/query/:fingerprint", this.handleErrFingerprint)
@@ -67,6 +70,7 @@ func (this *Connector) Open(gw core.IAPIGateway, ins core.IAPIConnector) *herror
 		//if this.conf.WebSocketUrl == "" {
 		//	panic("You enabled the websocket service, but did not specify its route in the configuration file!")
 		//}
+		//this.WsConnectPool = make(map[string]*websocket.Conn)
 		this.App.Use("/ws", func(c *fiber.Ctx) error {
 			// IsWebSocketUpgrade returns true if the client
 			// requested upgrade to the WebSocket protocol.
@@ -115,6 +119,10 @@ func (this *Connector) Open(gw core.IAPIGateway, ins core.IAPIConnector) *herror
 	}()
 
 	return nil
+}
+
+func (this *Connector) Name() string {
+	return this.conf.Name
 }
 
 func (this *Connector) handleErrFingerprint(c *fiber.Ctx) error {
@@ -198,16 +206,24 @@ func (this *Connector) handleWsServiceAPI(c *websocket.Conn) {
 	if hconf.IsDebug() {
 		hlogger.Info("websocket连接建立: ", c.RemoteAddr().String())
 	}
-	user := c.Query(this.conf.WSUserField)
-	token := c.Query(this.conf.WSTokenField)
-	err := this.Gateway.PreRequestMiddleware(c.Params("version"), c.Params("api"), htypes.Map{
-		this.conf.WSTokenField: token,
-		this.conf.WSUserField:  user,
-	})
+	user := c.Query(this.conf.WsUserField)
+	token := c.Query(this.conf.WsTokenField)
+
+	uid := uuid.NewV4().String()
+	this.WsConnMap[uid] = c
+	prePs := make(htypes.Map)
+	prePs = htypes.Map{
+		this.conf.WsTokenField: token,
+		this.conf.WsUserField:  user,
+		"WsID":                 uid,
+		"INITWS":               true,
+	}
+	_, err := this.Gateway.RequestWSAPI(c.Params("version"), c.Params("api"), prePs)
 	if err != nil {
-		this.SendWsResponse(c, nil, err)
+		this.SendWsResponse(uid, nil, err)
 		return
 	}
+	//this.SendWsResponse(uid, msgID, nil)
 	// 将ws连接放进pool
 	//this.WsConnectPool[]
 	for {
@@ -215,11 +231,13 @@ func (this *Connector) handleWsServiceAPI(c *websocket.Conn) {
 		if hconf.IsDebug() {
 			if errs != nil && errs.(*fastwebsocket.CloseError).Code == fastwebsocket.CloseNormalClosure {
 				hlogger.Info("websocket连接关闭: ", c.RemoteAddr().String())
+				delete(this.WsConnMap, uid)
 				break
 			}
 		}
 		if errs != nil {
 			hlogger.Error(errs)
+			delete(this.WsConnMap, uid)
 			break
 		}
 		if hconf.IsDebug() {
@@ -229,24 +247,27 @@ func (this *Connector) handleWsServiceAPI(c *websocket.Conn) {
 		case websocket.TextMessage:
 			ps := make(htypes.Map)
 			if errs = jsoniter.Unmarshal(msg, &ps); errs != nil {
-				this.SendWsResponse(c, nil, herrors.ErrSysInternal.New("解析错误").D(errs.Error()))
+				this.SendWsResponse(uid, nil, herrors.ErrSysInternal.New("解析错误").D(errs.Error()))
+				delete(this.WsConnMap, uid)
 				break
 			}
 			ps[this.conf.AddressField] = c.Conn.RemoteAddr().String()
-			ps[this.conf.WSUserField] = user
-			ps[this.conf.WSTokenField] = token
-			ret, err := this.Gateway.RequestWSAPI(c.Params("version"), c.Params("api"), ps, c)
+			ps[this.conf.WsUserField] = user
+			ps[this.conf.WsTokenField] = token
+			ps["INITWS"] = false
+			_, err := this.Gateway.RequestWSAPI(c.Params("version"), c.Params("api"), ps)
 			if err != nil {
-				this.SendWsResponse(c, nil, err)
+				this.SendWsResponse(uid, nil, err)
+				delete(this.WsConnMap, uid)
 				break
 			}
-			this.SendWsResponse(c, ret, err)
+			//this.SendWsResponse(c, ret, err)
 		}
 
 	}
 }
 
-func (this *Connector) SendWsResponse(c *websocket.Conn, data htypes.Any, err *herrors.Error) {
+func (this *Connector) SendWsResponse(wsID string, data htypes.Any, err *herrors.Error) {
 	if err != nil && err.Code != herrors.ECodeOK {
 		if this.conf.Lang != "" {
 			if trans := this.Gateway.I18n(); trans != nil {
@@ -256,7 +277,10 @@ func (this *Connector) SendWsResponse(c *websocket.Conn, data htypes.Any, err *h
 	}
 
 	bs, _ := this.Packer.Marshal(NewResponseData(data, err))
-	if e := c.WriteMessage(websocket.TextMessage, bs); e != nil {
+	if this.WsConnMap[wsID] == nil {
+		return
+	}
+	if e := this.WsConnMap[wsID].WriteMessage(websocket.TextMessage, bs); e != nil {
 		hlogger.Error(herrors.ErrSysInternal.New(e.Error()).D("failed to send data"))
 	}
 }

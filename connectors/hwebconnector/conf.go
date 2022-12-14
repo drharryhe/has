@@ -16,6 +16,7 @@ type WebConnector struct {
 	TlsKeyPath       string
 	AddressField     string
 	WebSocketEnabled bool   // 是否开启websocket
-	WSUserField      string // Websocket User字段
-	WSTokenField     string // Websocket Token字段
+	WsUserField      string // Websocket User字段
+	WsTokenField     string // Websocket Token字段
+	//WsMsgIDFile      string // 消息id
 }

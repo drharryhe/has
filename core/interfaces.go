@@ -3,7 +3,6 @@ package core
 import (
 	"github.com/drharryhe/has/common/herrors"
 	"github.com/drharryhe/has/common/htypes"
-	"github.com/gofiber/websocket/v2"
 )
 
 type IEntity interface {
@@ -74,6 +73,7 @@ type IPlugin interface {
 
 type IAPIConnector interface {
 	Open(gw IAPIGateway, ins IAPIConnector) *herrors.Error
+	Name() string
 	Close()
 }
 
@@ -101,7 +101,7 @@ type IAPIGateway interface {
 	I18n() IAPIi18n
 	PreRequestMiddleware(version string, api string, params htypes.Map) *herrors.Error
 	RequestAPI(version string, api string, params htypes.Map) (htypes.Any, *herrors.Error)
-	RequestWSAPI(version string, api string, params htypes.Map, c *websocket.Conn) (htypes.Any, *herrors.Error)
+	RequestWSAPI(version string, api string, params htypes.Map) (htypes.Any, *herrors.Error)
 }
 
 type IAPIi18n interface {

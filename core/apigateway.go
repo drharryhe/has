@@ -1,7 +1,6 @@
 package core
 
 import (
-	"github.com/gofiber/websocket/v2"
 	"strings"
 
 	"github.com/afex/hystrix-go/hystrix"
@@ -142,6 +141,14 @@ func (this *APIGateWayImplement) Router() IRouter {
 	return this.router
 }
 
+func (this *APIGateWayImplement) Connectors() map[string]IAPIConnector {
+	cs := make(map[string]IAPIConnector)
+	for _, connector := range this.connectors {
+		cs[connector.Name()] = connector
+	}
+	return cs
+}
+
 func (this *APIGateWayImplement) Packer(name string) IAPIDataPacker {
 	return this.packers[name]
 }
@@ -231,7 +238,7 @@ func (this *APIGateWayImplement) RequestAPI(version string, api string, params h
 	return ret, err
 }
 
-func (this *APIGateWayImplement) RequestWSAPI(version, api string, params htypes.Map, c *websocket.Conn) (ret htypes.Any, err *herrors.Error) {
+func (this *APIGateWayImplement) RequestWSAPI(version, api string, params htypes.Map) (ret htypes.Any, err *herrors.Error) {
 	a := this.apiSet[version]
 	if a == nil {
 		return nil, herrors.ErrCallerInvalidRequest.New("api version [%s] not supported", version)

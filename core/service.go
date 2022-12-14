@@ -146,8 +146,10 @@ func (this *Service) Request(slot string, params htypes.Map) (htypes.Any, *herro
 	}
 
 	//处理传入参数
-	if err := this.checkParams(params, s.Params); err != nil {
-		return nil, err
+	if params["INITWS"] == nil || !params["INITWS"].(bool) {
+		if err := this.checkParams(params, s.Params); err != nil {
+			return nil, err
+		}
 	}
 
 	//正式调用服务

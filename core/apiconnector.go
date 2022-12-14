@@ -24,6 +24,7 @@ type ConnectorConf struct {
 
 	Lang   string
 	Packer string
+	Name string
 }
 
 type BaseConnector struct {
@@ -60,6 +61,10 @@ func (this *BaseConnector) Open(gw IAPIGateway, ins IAPIConnector) *herrors.Erro
 
 func (this *BaseConnector) Class() string {
 	return this.class
+}
+
+func (this *BaseConnector) Name() string {
+	return this.instance.Name()
 }
 
 func (this *BaseConnector) Close() {

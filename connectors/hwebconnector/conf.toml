@@ -11,4 +11,6 @@ Tls = true
 TlsCertPath = "./certs/bby.crt"
 TlsKeyPath = "./certs/bby.key"
 WebSocketEnabled = false
-WebSocketUrl = "/:room_id"
+WsUserField = 'User'
+WsTokenField = 'Token'
+# WsMsgIDField = 'ws_msg_id'
