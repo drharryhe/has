@@ -254,6 +254,7 @@ func (this *Connector) handleWsServiceAPI(c *websocket.Conn) {
 			ps[this.conf.AddressField] = c.Conn.RemoteAddr().String()
 			ps[this.conf.WsUserField] = user
 			ps[this.conf.WsTokenField] = token
+			ps["WsID"] = uid
 			ps["INITWS"] = false
 			_, err := this.Gateway.RequestWSAPI(c.Params("version"), c.Params("api"), ps)
 			if err != nil {
@@ -263,7 +264,6 @@ func (this *Connector) handleWsServiceAPI(c *websocket.Conn) {
 			}
 			//this.SendWsResponse(c, ret, err)
 		}
-
 	}
 }
 
