@@ -4,7 +4,14 @@ import (
 	"bytes"
 	"crypto/tls"
 	"fmt"
+	"github.com/drharryhe/has/common/hconf"
+	"github.com/drharryhe/has/common/herrors"
+	"github.com/drharryhe/has/common/hlogger"
+	"github.com/drharryhe/has/common/htypes"
+	"github.com/drharryhe/has/core"
 	fastwebsocket "github.com/fasthttp/websocket"
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/websocket/v2"
 	jsoniter "github.com/json-iterator/go"
 	uuid "github.com/satori/go.uuid"
@@ -12,14 +19,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-
-	"github.com/drharryhe/has/common/hconf"
-	"github.com/drharryhe/has/common/herrors"
-	"github.com/drharryhe/has/common/hlogger"
-	"github.com/drharryhe/has/common/htypes"
-	"github.com/drharryhe/has/core"
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/cors"
 )
 
 const (
@@ -217,6 +216,7 @@ func (this *Connector) handleWsServiceAPI(c *websocket.Conn) {
 		this.conf.WsUserField:  user,
 		"WsID":                 uid,
 		"INITWS":               true,
+		"BREAK":                false,
 	}
 	_, err := this.Gateway.RequestWSAPI(c.Params("version"), c.Params("api"), prePs)
 	if err != nil {
@@ -229,14 +229,22 @@ func (this *Connector) handleWsServiceAPI(c *websocket.Conn) {
 	for {
 		mt, msg, errs := c.Conn.ReadMessage()
 		if hconf.IsDebug() {
-			if errs != nil && errs.(*fastwebsocket.CloseError).Code == fastwebsocket.CloseNormalClosure {
-				hlogger.Info("websocket连接关闭: ", c.RemoteAddr().String())
-				delete(this.WsConnMap, uid)
-				break
+			if errs != nil {
+				if errs.(*fastwebsocket.CloseError).Code == fastwebsocket.CloseNormalClosure {
+					hlogger.Info("websocket连接关闭: ", c.RemoteAddr().String())
+				} else {
+					hlogger.Error("WS连接异常断开: %s, %s", uid, errs.Error())
+				}
 			}
 		}
 		if errs != nil {
-			hlogger.Error(errs)
+			this.Gateway.RequestWSAPI(c.Params("version"), c.Params("api"), htypes.Map{
+				this.conf.WsTokenField: token,
+				this.conf.WsUserField:  user,
+				"WsID":                 uid,
+				"INITWS":               false,
+				"BREAK":                true,
+			})
 			delete(this.WsConnMap, uid)
 			break
 		}
@@ -256,6 +264,7 @@ func (this *Connector) handleWsServiceAPI(c *websocket.Conn) {
 			ps[this.conf.WsTokenField] = token
 			ps["WsID"] = uid
 			ps["INITWS"] = false
+			ps["BREAK"] = false
 			_, err := this.Gateway.RequestWSAPI(c.Params("version"), c.Params("api"), ps)
 			if err != nil {
 				this.SendWsResponse(uid, nil, err)

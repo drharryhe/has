@@ -1,7 +1,6 @@
 package core
 
 import (
-	"github.com/gofiber/websocket/v2"
 	jsoniter "github.com/json-iterator/go"
 
 	"github.com/drharryhe/has/common/herrors"
@@ -33,9 +32,9 @@ type SlotRequestBase struct {
 type SlotWsRequestBase struct {
 	SlotRequestBase
 
-	WsID       *string         `json:"WsID"`
-	WebConnect *websocket.Conn `json:"WebConnect"`
-	INITWS     *bool           `json:"INITWS"`
+	WsID   *string `json:"WsID"`
+	INITWS *bool   `json:"INITWS"`
+	BREAK  *bool   `json:"BREAK"`
 }
 
 func (this *SlotRequestBase) FromMap(data htypes.Map, ins interface{}) *herrors.Error {
