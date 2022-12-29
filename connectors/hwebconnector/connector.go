@@ -9,7 +9,6 @@ import (
 	"github.com/drharryhe/has/common/hlogger"
 	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/core"
-	fastwebsocket "github.com/fasthttp/websocket"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/websocket/v2"
@@ -19,6 +18,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 )
 
 const (
@@ -38,7 +38,8 @@ type Connector struct {
 
 	conf      WebConnector
 	App       *fiber.App
-	WsConnMap map[string]*websocket.Conn // ws_id: ws
+	//WsConnMap map[string]*websocket.Conn // ws_id: ws
+	WsConnMap sync.Map // ws_id: ws
 }
 
 func (this *Connector) Open(gw core.IAPIGateway, ins core.IAPIConnector) *herrors.Error {
@@ -58,7 +59,7 @@ func (this *Connector) Open(gw core.IAPIGateway, ins core.IAPIConnector) *herror
 		BodyLimit: this.conf.BodyLimit * 1024 * 1024,
 	})
 
-	this.WsConnMap = make(map[string]*websocket.Conn)
+	//this.WsConnMap = make(map[string]*websocket.Conn)
 
 	this.App.Use(cors.New())
 	if hconf.IsDebug() {
@@ -209,7 +210,8 @@ func (this *Connector) handleWsServiceAPI(c *websocket.Conn) {
 	token := c.Query(this.conf.WsTokenField)
 
 	uid := uuid.NewV4().String()
-	this.WsConnMap[uid] = c
+	//this.WsConnMap[uid] = c
+	this.WsConnMap.Store(uid, c)
 	prePs := make(htypes.Map)
 	prePs = htypes.Map{
 		this.conf.WsTokenField: token,
@@ -230,11 +232,7 @@ func (this *Connector) handleWsServiceAPI(c *websocket.Conn) {
 		mt, msg, errs := c.Conn.ReadMessage()
 		if hconf.IsDebug() {
 			if errs != nil {
-				if errs.(*fastwebsocket.CloseError).Code == fastwebsocket.CloseNormalClosure {
-					hlogger.Info("websocket连接关闭: ", c.RemoteAddr().String())
-				} else {
-					hlogger.Error("WS连接异常断开: %s, %s", uid, errs.Error())
-				}
+				hlogger.Warning("WS连接断开: %s, %s", uid, errs)
 			}
 		}
 		if errs != nil {
@@ -245,7 +243,8 @@ func (this *Connector) handleWsServiceAPI(c *websocket.Conn) {
 				"INITWS":               false,
 				"BREAK":                true,
 			})
-			delete(this.WsConnMap, uid)
+			//delete(this.WsConnMap, uid)
+			this.WsConnMap.Delete(uid)
 			break
 		}
 		if hconf.IsDebug() {
@@ -256,7 +255,8 @@ func (this *Connector) handleWsServiceAPI(c *websocket.Conn) {
 			ps := make(htypes.Map)
 			if errs = jsoniter.Unmarshal(msg, &ps); errs != nil {
 				this.SendWsResponse(uid, nil, herrors.ErrSysInternal.New("解析错误").D(errs.Error()))
-				delete(this.WsConnMap, uid)
+				//delete(this.WsConnMap, uid)
+				this.WsConnMap.Delete(uid)
 				break
 			}
 			ps[this.conf.AddressField] = c.Conn.RemoteAddr().String()
@@ -268,12 +268,21 @@ func (this *Connector) handleWsServiceAPI(c *websocket.Conn) {
 			_, err := this.Gateway.RequestWSAPI(c.Params("version"), c.Params("api"), ps)
 			if err != nil {
 				this.SendWsResponse(uid, nil, err)
-				delete(this.WsConnMap, uid)
+				//delete(this.WsConnMap, uid)
+				this.WsConnMap.Delete(uid)
 				break
 			}
 			//this.SendWsResponse(c, ret, err)
 		}
 	}
+}
+
+func (this *Connector) CloseWsConn(wsID string) (err error) {
+	//err = this.WsConnMap[wsID].Close()
+	//delete(this.WsConnMap, wsID)
+	wsConn, _ := this.WsConnMap.LoadAndDelete(wsID)
+	wsConn.(*websocket.Conn).Close()
+	return
 }
 
 func (this *Connector) SendWsResponse(wsID string, data htypes.Any, err *herrors.Error) {
@@ -286,10 +295,14 @@ func (this *Connector) SendWsResponse(wsID string, data htypes.Any, err *herrors
 	}
 
 	bs, _ := this.Packer.Marshal(NewResponseData(data, err))
-	if this.WsConnMap[wsID] == nil {
+	//if this.WsConnMap[wsID] == nil {
+	//	return
+	//}
+	wsConn, exist := this.WsConnMap.Load(wsID)
+	if !exist {
 		return
 	}
-	if e := this.WsConnMap[wsID].WriteMessage(websocket.TextMessage, bs); e != nil {
+	if e := wsConn.(*websocket.Conn).WriteMessage(websocket.TextMessage, bs); e != nil {
 		hlogger.Error(herrors.ErrSysInternal.New(e.Error()).D("failed to send data"))
 	}
 }
