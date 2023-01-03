@@ -179,11 +179,11 @@ func SetObjectValues(obj htypes.Any, values htypes.Map) error {
 			setObjectFieldInt(&vv, v)
 			break
 		case reflect.String:
-			result, err := time.Parse("2006-01-02 15:04:05", v.(string))
-			if err == nil {
-				vv.Set(reflect.ValueOf(result))
-				break
-			}
+			//result, err := time.Parse("2006-01-02 15:04:05", v.(string))
+			//if err == nil {
+			//	vv.Set(reflect.ValueOf(result))
+			//	break
+			//}
 			vv.SetString(v.(string))
 			break
 		case reflect.Bool:
