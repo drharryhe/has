@@ -10,6 +10,7 @@ import (
 
 	"gorm.io/driver/clickhouse"
 	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
 
@@ -133,7 +134,7 @@ func (this *Plugin) AutoMigrate(key string, objs []interface{}) (*gorm.DB, *herr
 	}
 
 	switch conn.Type {
-	case dbTypeClickhouse:
+	case dbTypeClickhouse, dbTypePostgres:
 		if err := db.AutoMigrate(objs...); err != nil {
 			return nil, herrors.ErrSysInternal.New(err.Error())
 		}
@@ -170,17 +171,29 @@ LOOP:
 	var db *gorm.DB
 	var dbCfg gorm.Config
 
+	if conn.SingularTable {
+		dbCfg.NamingStrategy = schema.NamingStrategy{
+			SingularTable: true,
+		}
+	}
+
 	switch conn.Type {
 	case dbTypeMysql:
-		if conn.SingularTable {
-			dbCfg.NamingStrategy = schema.NamingStrategy{
-				SingularTable: true,
-			}
-		}
 		db, err = gorm.Open(mysql.Open(this.Dsn(conn, false)), &dbCfg)
 		if err != nil {
 			if strings.Index(err.Error(), "1049") < 0 || shouldCreateDB {
-				return nil, herrors.ErrSysInternal.New(err.Error()).D("failed to open Plugin")
+				return nil, herrors.ErrSysInternal.New(err.Error()).D("failed to open database")
+			}
+			shouldCreateDB = true
+		} else {
+			shouldCreateDB = false
+		}
+		break
+	case dbTypePostgres:
+		db, err = gorm.Open(postgres.Open(this.Dsn(conn, false)), &dbCfg)
+		if err != nil {
+			if strings.Index(err.Error(), "1049") < 0 || shouldCreateDB {
+				return nil, herrors.ErrSysInternal.New(err.Error()).D("failed to open database")
 			}
 			shouldCreateDB = true
 		} else {
@@ -188,12 +201,6 @@ LOOP:
 		}
 		break
 	case dbTypeClickhouse:
-		if conn.SingularTable {
-			dbCfg.NamingStrategy = schema.NamingStrategy{
-				SingularTable: true,
-			}
-		}
-
 		if conn.ReadTimeout == 0 {
 			conn.ReadTimeout = defaultReadTimeout
 		}
@@ -397,6 +404,14 @@ func (this *Plugin) Dsn(conn *connection, new bool) string {
 		} else {
 			return fmt.Sprintf("tcp://%s:%d?database=%s&username=%s&password=%s&read_timeout=%d&write_timeout=%d",
 				conn.Server, conn.Port, conn.Name, conn.User, conn.Pwd, conn.ReadTimeout, conn.WriteTimeout)
+		}
+	case dbTypePostgres:
+		if new {
+			return fmt.Sprintf("host=%s user=%s password=%s dbname=default port=%d sslmode=disable TimeZone=Asia/Shanghai",
+				conn.Server, conn.User, conn.Pwd, conn.Port)
+		} else {
+			return fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=disable TimeZone=Asia/Shanghai",
+				conn.Server, conn.User, conn.Pwd, conn.Name, conn.Port)
 		}
 	default:
 		if new {
