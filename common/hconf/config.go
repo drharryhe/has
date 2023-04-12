@@ -82,7 +82,7 @@ func Load(conf interface{}) {
 	bs, _ := toml.Marshal(c)
 	err := toml.Unmarshal(bs, conf)
 	if err != nil {
-		panic(fmt.Sprintf("failed to parse config section [%s]", name))
+		panic(fmt.Sprintf("failed to parse config section [%s]:%v", name, err))
 	}
 
 	config.configures[name] = conf
