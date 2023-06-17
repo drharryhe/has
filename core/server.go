@@ -222,7 +222,7 @@ func (this *ServerImplement) RegisterService(service IService, options htypes.An
 		herr = herrors.ErrSysInternal.New("plugin [%s] not implement IEntity interface", hruntime.GetObjectName(service))
 		goto panic
 	} else {
-		hconf.Load(entity.Config())
+		//hconf.Load(entity.Config())
 
 		if herr = service.Open(this, service, options); herr != nil {
 			goto panic
