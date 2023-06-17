@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/json"
 	"github.com/drharryhe/has/common/hlogger"
 	"reflect"
 	"strings"
@@ -246,7 +247,7 @@ func (this *Service) callSlotHandler(slot *Slot, params htypes.Map) (htypes.Any,
 				hlogger.Error(err)
 			}
 
-			err = jsoniter.Unmarshal(bs, req)
+			err = json.Unmarshal(bs, req) // 出现解析不到的情况
 			if err != nil {
 				hlogger.Error(err)
 				return nil, herrors.ErrSysInternal.New("请求参数错误")
