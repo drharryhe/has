@@ -106,7 +106,7 @@ func (this *Service) Open(s IServer, instance IService, options htypes.Any) *her
 	this.class = hruntime.GetObjectName(instance.(IEntity).Config())
 	this.instance = instance
 
-	//hconf.Load(this.instance.(IEntity).Config())
+	hconf.Load(this.instance.(IEntity).Config()) // 为什么注释了这行?
 
 	this.server = s
 	if this.Name() == "" {
