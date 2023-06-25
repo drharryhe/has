@@ -49,7 +49,13 @@ func (this *Service) Open(s core.IServer, instance core.IService, options htypes
 	}
 
 	plugin := this.UsePlugin("DatabasePlugin").(*hdatabaseplugin.Plugin)
-	this.db, err = plugin.AddObjects(this.conf.DatabaseKey, this.Objects())
+	this.db = plugin.Capability().(map[string]*gorm.DB)[this.conf.DatabaseKey]
+
+	if this.conf.AutoMigrate {
+		this.db.AutoMigrate(&SvsApAuthUser{})
+		this.conf.AutoMigrate = false
+		hconf.Save()
+	}
 
 	if this.conf.SessionService == "" {
 		return herrors.ErrSysInternal.New("[SessionService] not configured")
@@ -83,7 +89,7 @@ func (this *Service) Config() core.IEntityConf {
 
 func (this *Service) Objects() []interface{} {
 	return []interface{}{
-		SvsApAuthUser{},
+		&SvsApAuthUser{},
 	}
 }
 

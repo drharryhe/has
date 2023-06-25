@@ -127,7 +127,7 @@ func (this *Service) Open(s core.IServer, instance core.IService, options htypes
 				this.objectsByKey[obj.key] = obj
 				this.objectsByName[n] = obj
 
-				if this.conf.AutoMigrator {
+				if this.conf.AutoMigrate {
 					if err := this.getDB(obj.database).AutoMigrate(o); err != nil {
 						if hconf.IsDebug() {
 							_ = herrors.ErrSysInternal.New(err.Error())
@@ -137,6 +137,9 @@ func (this *Service) Open(s core.IServer, instance core.IService, options htypes
 					}
 				}
 			}
+			hlogger.Info("AutoMigrate Done")
+			this.conf.AutoMigrate = false
+			hconf.Save()
 		}
 
 		if ops.Views != nil {
@@ -300,7 +303,7 @@ func (this *Service) convertGo2SqlType(v interface{}) interface{} {
 	case reflect.Struct:
 		return &sql.NullTime{}
 	default:
-		return v
+		return &v
 	}
 }
 
@@ -328,25 +331,25 @@ func (this *Service) buildDimValues(ins interface{}, fMap map[string]iField, dim
 	v := reflect.ValueOf(hruntime.CloneObject(ins))
 	if dims == nil || len(dims) == 0 {
 		for i := 0; i < v.Elem().NumField(); i++ {
-			k := v.Elem().Field(i).Kind()
-			if k == reflect.Map || k == reflect.Slice || k == reflect.Ptr {
-				continue
-			}
-			if k == reflect.Struct && v.Elem().Field(i).Type().Name() != "Time" {
-				continue
-			}
+			//k := v.Elem().Field(i).Kind()
+			//if k == reflect.Map || k == reflect.Slice || k == reflect.Ptr {
+			//	continue
+			//}
+			//if k == reflect.Struct && v.Elem().Field(i).Type().Name() != "Time" {
+			//	continue
+			//}
 			f := this.convertGo2SqlType(v.Elem().Field(i).Interface())
 			ret = append(ret, f)
 		}
 	} else {
 		for _, s := range dims {
-			k := v.Elem().FieldByName(fMap[s].Name()).Kind()
-			if k == reflect.Map || k == reflect.Slice || k == reflect.Ptr {
-				continue
-			}
-			if k == reflect.Struct && v.Elem().FieldByName(fMap[s].Name()).Type().Name() != "Time" {
-				continue
-			}
+			//k := v.Elem().FieldByName(fMap[s].Name()).Kind()
+			//if k == reflect.Map || k == reflect.Slice || k == reflect.Ptr {
+			//	continue
+			//}
+			//if k == reflect.Struct && v.Elem().FieldByName(fMap[s].Name()).Type().Name() != "Time" {
+			//	continue
+			//}
 			f := this.convertGo2SqlType(v.Elem().FieldByName(fMap[s].Name()).Interface())
 			ret = append(ret, f)
 		}
@@ -358,9 +361,9 @@ func (this *Service) buildDimValues(ins interface{}, fMap map[string]iField, dim
 func (this *Service) bindDimValues(fMap map[string]iField, dims []string, values []interface{}) map[string]interface{} {
 	ret := make(map[string]interface{})
 	for i, d := range dims {
-		if fMap[d].Kind() == reflect.Struct || fMap[d].Kind() == reflect.Slice {
-			continue
-		}
+		//if fMap[d].Kind() == reflect.Struct || fMap[d].Kind() == reflect.Slice {
+		//	continue
+		//}
 		ret[d] = this.convertSql2GoValue(values[i], fMap[d].Kind())
 	}
 	return ret
@@ -1664,7 +1667,8 @@ func (this *Service) parseObject(name string, o interface{}) (*object, *herrors.
 		of.kind = f.Type.Kind()
 		if of.kind == reflect.Struct {
 			if f.Type.Name() == "Time" {
-				of.kind = reflect.Int64
+				// 时间类型使用Int64时出现了很多数据没被查询到的情况
+				of.kind = reflect.String
 			} else {
 				of.kind = reflect.Map
 			}
@@ -2132,7 +2136,7 @@ func (this *Service) parseOrderBy(fldMap map[string]iField, s string) (*ordering
 	}
 	order := &ordering{}
 	order.object = f.Owner().object.key
-	order.column = f.Key()
+	order.column = f.Owner().fieldCol
 	if len(ss) == 1 || strings.ToUpper(strings.Trim(ss[1], " ")) == "ASC" {
 		order.direction = "ASC"
 	} else {

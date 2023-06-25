@@ -420,16 +420,16 @@ func (this *Service) Query(req *QueryRequest, res *core.SlotResponse) {
 			return
 		}
 
-		if f.kind == reflect.Map || f.kind == reflect.Ptr {
+		if f.kind == reflect.Map {
 			continue
 		}
 
-		if f.kind == reflect.Slice || f.kind == reflect.Struct {
-			continue
-		} else {
+		//if f.kind == reflect.Slice || f.kind == reflect.Struct {
+		//	continue
+		//} else {
 			dims = append(dims, f.Key())
 			selectFieldNames = append(selectFieldNames, f.SQL())
-		}
+		//}
 	}
 
 	if len(dims) == 0 {
@@ -545,6 +545,8 @@ func (this *Service) Query(req *QueryRequest, res *core.SlotResponse) {
 	} else {
 		this.Response(res, records, nil)
 	}
+	// 不清空可能会影响到其它的 this.db
+	this.getDB(o.database).Statement.Table = ""
 }
 
 type ViewRequest struct {
@@ -694,7 +696,7 @@ func (this *Service) View(req *ViewRequest, res *core.SlotResponse) {
 	if lmt.count > 0 {
 		scope = scope.Limit(lmt.count).Offset(lmt.offset)
 	}
-	rows, err := scope.Rows()
+	rows, err := scope.Debug().Rows()
 	if err != nil {
 		this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
 		return

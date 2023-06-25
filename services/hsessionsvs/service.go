@@ -1,6 +1,7 @@
 package hsessionsvs
 
 import (
+	"github.com/drharryhe/has/common/hconf"
 	cache2 "github.com/patrickmn/go-cache"
 	"gorm.io/gorm"
 
@@ -36,13 +37,14 @@ func (this *Service) Open(s core.IServer, instance core.IService, options htypes
 		return err
 	}
 
-	db, err := this.UsePlugin("DatabasePlugin").(*hdatabaseplugin.Plugin).AddObjects(this.conf.DatabaseKey, this.Objects())
-	if err != nil {
-		return err
-	}
-	this.db = db
+	this.db = this.UsePlugin("DatabasePlugin").(*hdatabaseplugin.Plugin).Capability().(map[string]*gorm.DB)[this.conf.DatabaseKey]
 
 	this.cache = this.UsePlugin("MemCachePlugin").(*hmemcacheplugin.Plugin).GetCache(this.Class())
+	if this.conf.AutoMigrate {
+		this.db.AutoMigrate(&SvsSessionToken{})
+		this.conf.AutoMigrate = false
+		hconf.Save()
+	}
 	if this.conf.SessionsPerUser <= 0 {
 		this.conf.SessionsPerUser = defaultSessionPerUser
 	}
@@ -67,25 +69,25 @@ func (this *Service) Config() core.IEntityConf {
 
 func (this *Service) Objects() []interface{} {
 	return []interface{}{
-		SvsSessionToken{},
+		&SvsSessionToken{},
 	}
 }
 
 func (this *Service) checkToken(st *SvsSessionToken, req *VerifyTokenRequest) *herrors.Error {
 	if this.conf.CheckIP && (req.IP == nil || st.IP != *req.IP) {
-		return herrors.ErrCallerInvalidRequest.New("invalid token IP").D(strInvalidToken)
+		return herrors.ErrCallerInvalidRequest.New(strInvalidToken).D("invalid token IP")
 	}
 
 	if this.conf.CheckUser && (req.User == nil || st.User != *req.User) {
-		return herrors.ErrCallerInvalidRequest.New("invalid token user").D(strInvalidToken)
+		return herrors.ErrCallerInvalidRequest.New(strInvalidToken).D("invalid token user")
 	}
 
 	if this.conf.CheckAgent && (req.Agent == nil || st.Agent != *req.Agent) {
-		return herrors.ErrCallerInvalidRequest.New("invalid token agent").D(strInvalidToken)
+		return herrors.ErrCallerInvalidRequest.New(strInvalidToken).D("invalid token agent")
 	}
 
 	if st.Validity.Format("2006-01-02 15:04:05") < hdatetime.Now() {
-		return herrors.ErrCallerInvalidRequest.New("token expired").D(strInvalidToken)
+		return herrors.ErrCallerInvalidRequest.New(strInvalidToken).D("token expired")
 	}
 	return nil
 }

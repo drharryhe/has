@@ -3,3 +3,5 @@ Name = "file"
 Hash = "sha256"
 Storage = "fs"
 MinioBucket = "default"
+AutoMigrate = true
+DatabaseKey = "mysql"

@@ -48,7 +48,7 @@ type Plugin struct {
 	dbs     []*gorm.DB
 	dbMap   map[string]*gorm.DB
 	objects htypes.Map
-	conf    DatabasePlugin
+	Conf    DatabasePlugin
 }
 
 func (this *Plugin) Open(s core.IServer, ins core.IPlugin) *herrors.Error {
@@ -57,12 +57,12 @@ func (this *Plugin) Open(s core.IServer, ins core.IPlugin) *herrors.Error {
 	}
 
 	this.dbMap = make(map[string]*gorm.DB)
-	for i := 0; i < len(this.conf.Connections); i++ {
-		db, herr := this.openDatabase(&this.conf.Connections[i])
+	for i := 0; i < len(this.Conf.Connections); i++ {
+		db, herr := this.openDatabase(&this.Conf.Connections[i])
 		if herr != nil {
 			return herr
 		}
-		this.dbMap[this.conf.Connections[i].Key] = db
+		this.dbMap[this.Conf.Connections[i].Key] = db
 		this.dbs = append(this.dbs, db)
 	}
 	return nil
@@ -85,10 +85,15 @@ func (this *Plugin) AddObjectsToDefaultDB(objs []interface{}) (*gorm.DB, *herror
 }
 
 func (this *Plugin) AddObjects(key string, objs []interface{}) (*gorm.DB, *herrors.Error) {
-	db, herr := this.AutoMigrate(key, objs)
-	if herr != nil {
-		return nil, herr
-	}
+	var db *gorm.DB
+	//if this.Conf.AutoMigrate {
+	//	var err *herrors.Error
+	//	db, err = this.AutoMigrate(key, objs)
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//}
+
 
 	for _, o := range objs {
 		n := hruntime.GetObjectName(o)
@@ -107,7 +112,7 @@ func (this *Plugin) Objects() htypes.Map {
 }
 
 func (this *Plugin) Config() core.IEntityConf {
-	return &this.conf
+	return &this.Conf
 }
 
 func (this *Plugin) EntityStub() *core.EntityStub {
@@ -328,7 +333,7 @@ func (this *Plugin) getConnAndDB(key string) (*gorm.DB, *connection, *herrors.Er
 
 	if key == defaultDBKey {
 		db = this.dbs[0]
-		conn = &this.conf.Connections[0]
+		conn = &this.Conf.Connections[0]
 		return db, conn, nil
 	} else {
 		db = this.dbMap[key]
@@ -336,7 +341,7 @@ func (this *Plugin) getConnAndDB(key string) (*gorm.DB, *connection, *herrors.Er
 			return nil, nil, herrors.ErrCallerInvalidRequest.New("database [%s] not found", key)
 		}
 
-		for _, c := range this.conf.Connections {
+		for _, c := range this.Conf.Connections {
 			if c.Key == key {
 				conn = &c
 				break
@@ -369,17 +374,17 @@ func (this *Plugin) updateConfigItems(params htypes.Map) *herrors.Error {
 	}
 
 	if len(ps) > 0 {
-		if err := hruntime.SetObjectValues(&this.conf, ps); err != nil {
+		if err := hruntime.SetObjectValues(&this.Conf, ps); err != nil {
 			return herrors.ErrCallerInvalidRequest.New(err.Error())
 		}
 	}
 
 	for key, vals := range conns {
 		found := false
-		for i := range this.conf.Connections {
-			if this.conf.Connections[i].Key == key {
+		for i := range this.Conf.Connections {
+			if this.Conf.Connections[i].Key == key {
 				found = true
-				if err := hruntime.SetObjectValues(&this.conf.Connections[i], vals.(htypes.Map)); err != nil {
+				if err := hruntime.SetObjectValues(&this.Conf.Connections[i], vals.(htypes.Map)); err != nil {
 					return herrors.ErrCallerInvalidRequest.New(err.Error())
 
 				}
@@ -418,7 +423,7 @@ func (this *Plugin) Dsn(conn *connection, new bool) string {
 			return fmt.Sprintf("%s:%s@tcp(%s:%d)/",
 				conn.User, conn.Pwd, conn.Server, conn.Port)
 		} else {
-			return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=true&loc=Local",
+			return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=true&loc=Asia%%2FShanghai",
 				conn.User, conn.Pwd, conn.Server, conn.Port, conn.Name)
 
 		}

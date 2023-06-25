@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/json"
 	"github.com/drharryhe/has/common/hlogger"
 	"reflect"
 	"strings"
@@ -105,7 +106,7 @@ func (this *Service) Open(s IServer, instance IService, options htypes.Any) *her
 	this.class = hruntime.GetObjectName(instance.(IEntity).Config())
 	this.instance = instance
 
-	hconf.Load(this.instance.(IEntity).Config())
+	hconf.Load(this.instance.(IEntity).Config()) // 为什么注释了这行?
 
 	this.server = s
 	if this.Name() == "" {
@@ -146,8 +147,10 @@ func (this *Service) Request(slot string, params htypes.Map) (htypes.Any, *herro
 	}
 
 	//处理传入参数
-	if err := this.checkParams(params, s.Params); err != nil {
-		return nil, err
+	if params["INITWS"] == nil || !params["INITWS"].(bool) {
+		if err := this.checkParams(params, s.Params); err != nil {
+			return nil, err
+		}
 	}
 
 	//正式调用服务
@@ -238,8 +241,17 @@ func (this *Service) callSlotHandler(slot *Slot, params htypes.Map) (htypes.Any,
 		req = &params
 		if slot.ReqInstance != nil {
 			req = hruntime.CloneObject(slot.ReqInstance)
-			bs, _ := jsoniter.Marshal(params)
-			_ = jsoniter.Unmarshal(bs, req)
+			this.BoolTypeTransform(&params)
+			bs, err := jsoniter.Marshal(params)
+			if err != nil {
+				hlogger.Error(err)
+			}
+
+			err = json.Unmarshal(bs, req) // 出现解析不到的情况
+			if err != nil {
+				hlogger.Error(err)
+				return nil, herrors.ErrSysInternal.New("请求参数错误")
+			}
 		}
 		//if err := hruntime.Map2Struct(params, req); err != nil {
 		//	return nil, herrors.ErrSysInternal.New(err.Error())
@@ -253,6 +265,17 @@ func (this *Service) callSlotHandler(slot *Slot, params htypes.Map) (htypes.Any,
 		}
 	} else {
 		return nil, herrors.ErrCallerInvalidRequest.New("service [%s] slot [%s] not found", this.class, slot).D("failed to call slot")
+	}
+}
+
+func (this *Service) BoolTypeTransform(params *htypes.Map) {
+	for key, v := range *params {
+		if v == "false" {
+			(*params)[key] = false
+		}
+		if v == "true" {
+			(*params)[key] = true
+		}
 	}
 }
 

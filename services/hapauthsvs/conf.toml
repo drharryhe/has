@@ -1,5 +1,6 @@
 [ApAuthService]
 DefaultPwd = 'Qaz@2020'
+AutoMigrate = true
 Disabled = false
 EID = 'c21f4f863a974fb182c9ae4cf05dc142'
 InAddressField = 'IP'
@@ -22,5 +23,6 @@ SessionRevokeSlot = 'revokeToken'
 SessionService = 'session'
 SessionVerifySlot = 'verifyToken'
 SuperFails = 0
+UnlockTime = 30
 SuperName = 'victor'
 SuperPwd = '89c766f8cf1624a178f4c8cf599d978b'

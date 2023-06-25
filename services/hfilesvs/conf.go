@@ -6,6 +6,7 @@ type FileService struct {
 	core.ServiceConf
 
 	DatabaseKey string
+	AutoMigrate bool
 	Name        string
 	Hash        string
 	Storage     string

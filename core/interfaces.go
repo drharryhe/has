@@ -73,6 +73,7 @@ type IPlugin interface {
 
 type IAPIConnector interface {
 	Open(gw IAPIGateway, ins IAPIConnector) *herrors.Error
+	Name() string
 	Close()
 }
 
@@ -98,7 +99,9 @@ type IAPIGateway interface {
 	Router() IRouter
 	Packer(name string) IAPIDataPacker
 	I18n() IAPIi18n
+	PreRequestMiddleware(version string, api string, params htypes.Map) *herrors.Error
 	RequestAPI(version string, api string, params htypes.Map) (htypes.Any, *herrors.Error)
+	RequestWSAPI(version string, api string, params htypes.Map) (htypes.Any, *herrors.Error)
 }
 
 type IAPIi18n interface {

@@ -29,6 +29,14 @@ type SlotParameter struct {
 type SlotRequestBase struct {
 }
 
+type SlotWsRequestBase struct {
+	SlotRequestBase
+
+	WsID   *string `json:"WsID"`
+	INITWS *bool   `json:"INITWS"`
+	BREAK  *bool   `json:"BREAK"`
+}
+
 func (this *SlotRequestBase) FromMap(data htypes.Map, ins interface{}) *herrors.Error {
 	bs, _ := jsoniter.Marshal(data)
 	return this.FromJSON(string(bs), ins)

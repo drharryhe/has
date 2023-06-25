@@ -43,7 +43,7 @@ type Service struct {
 
 func (this *Service) Objects() []interface{} {
 	return []interface{}{
-		SvsFile{},
+		&SvsFile{},
 	}
 }
 
@@ -53,11 +53,15 @@ func (this *Service) Open(s core.IServer, instance core.IService, options htypes
 		return err
 	}
 
-	this.db, err = this.UsePlugin("DatabasePlugin").(*hdatabaseplugin.Plugin).AddObjects(this.conf.DatabaseKey, this.Objects())
+	this.db = this.UsePlugin("DatabasePlugin").(*hdatabaseplugin.Plugin).Capability().(map[string]*gorm.DB)[this.conf.DatabaseKey]
 	if err != nil {
 		return err
 	}
-
+	if this.conf.AutoMigrate {
+		this.db.AutoMigrate(&SvsFile{})
+		this.conf.AutoMigrate = false
+		hconf.Save()
+	}
 	if this.conf.Storage == "" {
 		this.conf.Storage = storageFS
 	}

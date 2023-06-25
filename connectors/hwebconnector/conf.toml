@@ -1,4 +1,5 @@
 [WebConnector]
+Name = 'webConnector'
 Disabled = false
 AppKey = "1234"
 AppSecret = "1234"
@@ -11,4 +12,6 @@ Tls = true
 TlsCertPath = "./certs/bby.crt"
 TlsKeyPath = "./certs/bby.key"
 WebSocketEnabled = false
-WebSocketUrl = "/:room_id"
+WsUserField = 'User'
+WsTokenField = 'Token'
+# WsMsgIDField = 'ws_msg_id'

@@ -4,12 +4,6 @@ import (
 	"bytes"
 	"crypto/tls"
 	"fmt"
-	"github.com/gofiber/websocket/v2"
-	jsoniter "github.com/json-iterator/go"
-	"io"
-	"net/url"
-	"strings"
-
 	"github.com/drharryhe/has/common/hconf"
 	"github.com/drharryhe/has/common/herrors"
 	"github.com/drharryhe/has/common/hlogger"
@@ -17,6 +11,14 @@ import (
 	"github.com/drharryhe/has/core"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/websocket/v2"
+	jsoniter "github.com/json-iterator/go"
+	uuid "github.com/satori/go.uuid"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+	"sync"
 )
 
 const (
@@ -26,17 +28,18 @@ const (
 	defaultPort      = 1976
 )
 
-func New(options *core.ConnectorOptions /*map["application/json"]HandleFunc*/) *Connector {
+func New() *Connector {
 	this := new(Connector)
-	this.Options = options
 	return this
 }
 
 type Connector struct {
 	core.BaseConnector
 
-	conf WebConnector
-	App  *fiber.App
+	conf      WebConnector
+	App       *fiber.App
+	//WsConnMap map[string]*websocket.Conn // ws_id: ws
+	WsConnMap sync.Map // ws_id: ws
 }
 
 func (this *Connector) Open(gw core.IAPIGateway, ins core.IAPIConnector) *herrors.Error {
@@ -56,18 +59,18 @@ func (this *Connector) Open(gw core.IAPIGateway, ins core.IAPIConnector) *herror
 		BodyLimit: this.conf.BodyLimit * 1024 * 1024,
 	})
 
+	//this.WsConnMap = make(map[string]*websocket.Conn)
+
 	this.App.Use(cors.New())
 	if hconf.IsDebug() {
 		this.App.Get("/error/query/:fingerprint", this.handleErrFingerprint)
 		this.App.Get("/error/statics", this.handleErrStatics)
 	}
 	if this.conf.WebSocketEnabled {
-		if this.conf.WebSocketUrl == "" {
-			panic("You enabled the websocket service, but did not specify its route in the configuration file!")
-		}
-		if this.Options == nil || this.Options.BodyDecoders["ws"] == nil {
-			panic("You enabled the websocket service, but did not set up a resolution method for it!")
-		}
+		//if this.conf.WebSocketUrl == "" {
+		//	panic("You enabled the websocket service, but did not specify its route in the configuration file!")
+		//}
+		//this.WsConnectPool = make(map[string]*websocket.Conn)
 		this.App.Use("/ws", func(c *fiber.Ctx) error {
 			// IsWebSocketUpgrade returns true if the client
 			// requested upgrade to the WebSocket protocol.
@@ -77,11 +80,15 @@ func (this *Connector) Open(gw core.IAPIGateway, ins core.IAPIConnector) *herror
 			}
 			return fiber.ErrUpgradeRequired
 		})
-		this.App.Get(fmt.Sprintf("/ws%s", this.conf.WebSocketUrl), websocket.New(this.handleWsServiceAPI))
+		this.App.Get(fmt.Sprintf("/ws/:version/:api"), websocket.New(this.handleWsServiceAPI))
 	}
 
-	this.App.Get("/:version/:api", this.handleServiceAPI)
-	this.App.Post("/:version/:api", this.handleServiceAPI)
+	this.App.Get("/:version/*", this.handleServiceAPI)
+	this.App.Post("/:version/*", this.handleServiceAPI)
+	this.App.Get("/ping", func(ctx *fiber.Ctx) error {
+		ctx.Status(http.StatusOK)
+		return ctx.SendString("pong")
+	})
 
 	go func() {
 		if this.conf.Tls {
@@ -114,6 +121,10 @@ func (this *Connector) Open(gw core.IAPIGateway, ins core.IAPIConnector) *herror
 	return nil
 }
 
+func (this *Connector) Name() string {
+	return this.conf.Name
+}
+
 func (this *Connector) handleErrFingerprint(c *fiber.Ctx) error {
 	if !hconf.IsDebug() {
 		_ = c.SendString("error fingerprint query not available")
@@ -142,8 +153,10 @@ func (this *Connector) handleErrStatics(c *fiber.Ctx) error {
 }
 
 func (this *Connector) handleServiceAPI(c *fiber.Ctx) error {
-	api := c.Params("api")
+	//api := c.Params("api")
 	version := c.Params("version")
+	api := strings.Replace(c.Path(), "/"+version+"/", "", 1)
+	hlogger.Info(api)
 	ps, err := this.ParseQueryParams(c)
 	if err != nil {
 		return err
@@ -159,21 +172,20 @@ func (this *Connector) handleServiceAPI(c *fiber.Ctx) error {
 		return err
 	}
 
-	if this.Options == nil {
-		err = this.ParseBodyParams(c, ps)
-		if err != nil {
-			return err
-		}
-	} else {
-		for mime, decoderFunc := range this.Options.BodyDecoders {
-			if string(c.Request().Header.ContentType()) == mime {
-				ps, err = decoderFunc(c)
-				if err != nil {
-					return err
-				}
-			}
-		}
+	err = this.ParseBodyParams(c, ps)
+	if err != nil {
+		return err
 	}
+	//if this.Options != nil {
+	//	for mime, decoderFunc := range this.Options.BodyDecoders {
+	//		if string(c.Request().Header.ContentType()) == mime {
+	//			ps, err = decoderFunc(c, version, api)
+	//			if err != nil {
+	//				return err
+	//			}
+	//		}
+	//	}
+	//}
 
 	ps[this.conf.AddressField] = c.IP()
 	ret, err := this.Gateway.RequestAPI(version, api, ps)
@@ -193,7 +205,108 @@ func (this *Connector) handleServiceAPI(c *fiber.Ctx) error {
 }
 
 func (this *Connector) handleWsServiceAPI(c *websocket.Conn) {
-	_, _ = this.Options.BodyDecoders["ws"](c)
+	if hconf.IsDebug() {
+		hlogger.Info("websocket连接建立: ", c.RemoteAddr().String())
+	}
+	user := c.Query(this.conf.WsUserField)
+	token := c.Query(this.conf.WsTokenField)
+
+	uid := uuid.NewV4().String()
+	//this.WsConnMap[uid] = c
+	this.WsConnMap.Store(uid, c)
+	prePs := make(htypes.Map)
+	prePs = htypes.Map{
+		this.conf.WsTokenField: token,
+		this.conf.WsUserField:  user,
+		"WsID":                 uid,
+		"INITWS":               true,
+		"BREAK":                false,
+	}
+	_, err := this.Gateway.RequestWSAPI(c.Params("version"), c.Params("api"), prePs)
+	if err != nil {
+		this.SendWsResponse(uid, nil, err)
+		return
+	}
+	//this.SendWsResponse(uid, msgID, nil)
+	// 将ws连接放进pool
+	//this.WsConnectPool[]
+	for {
+		mt, msg, errs := c.Conn.ReadMessage()
+		if hconf.IsDebug() {
+			if errs != nil {
+				hlogger.Warning("WS连接断开: %s, %s", uid, errs)
+			}
+		}
+		if errs != nil {
+			this.Gateway.RequestWSAPI(c.Params("version"), c.Params("api"), htypes.Map{
+				this.conf.WsTokenField: token,
+				this.conf.WsUserField:  user,
+				"WsID":                 uid,
+				"INITWS":               false,
+				"BREAK":                true,
+			})
+			//delete(this.WsConnMap, uid)
+			this.WsConnMap.Delete(uid)
+			break
+		}
+		if hconf.IsDebug() {
+			hlogger.Info("ws消息类型: %d\ndata:%s", mt, msg)
+		}
+		switch mt {
+		case websocket.TextMessage:
+			ps := make(htypes.Map)
+			if errs = jsoniter.Unmarshal(msg, &ps); errs != nil {
+				this.SendWsResponse(uid, nil, herrors.ErrSysInternal.New("解析错误").D(errs.Error()))
+				//delete(this.WsConnMap, uid)
+				this.WsConnMap.Delete(uid)
+				break
+			}
+			ps[this.conf.AddressField] = c.Conn.RemoteAddr().String()
+			ps[this.conf.WsUserField] = user
+			ps[this.conf.WsTokenField] = token
+			ps["WsID"] = uid
+			ps["INITWS"] = false
+			ps["BREAK"] = false
+			_, err := this.Gateway.RequestWSAPI(c.Params("version"), c.Params("api"), ps)
+			if err != nil {
+				this.SendWsResponse(uid, nil, err)
+				//delete(this.WsConnMap, uid)
+				this.WsConnMap.Delete(uid)
+				break
+			}
+			//this.SendWsResponse(c, ret, err)
+		}
+	}
+}
+
+func (this *Connector) CloseWsConn(wsID string) (err error) {
+	//err = this.WsConnMap[wsID].Close()
+	//delete(this.WsConnMap, wsID)
+	wsConn, _ := this.WsConnMap.LoadAndDelete(wsID)
+	wsConn.(*websocket.Conn).Close()
+	return
+}
+
+func (this *Connector) SendWsResponse(wsID string, data htypes.Any, err *herrors.Error) {
+	if err != nil && err.Code != herrors.ECodeOK {
+		if this.conf.Lang != "" {
+			if trans := this.Gateway.I18n(); trans != nil {
+				err = err.D(trans.Translate(this.conf.Lang, err.Desc))
+			}
+		}
+	}
+
+	bs, _ := this.Packer.Marshal(NewResponseData(data, err))
+	//if this.WsConnMap[wsID] == nil {
+	//	return
+	//}
+	wsConn, exist := this.WsConnMap.Load(wsID)
+	if !exist {
+		return
+	}
+	if e := wsConn.(*websocket.Conn).WriteMessage(websocket.TextMessage, bs); e != nil {
+		hlogger.Error(herrors.ErrSysInternal.New(e.Error()).D("failed to send data"))
+	}
 }
 
 func (this *Connector) SendResponse(c *fiber.Ctx, data htypes.Any, err *herrors.Error) {
