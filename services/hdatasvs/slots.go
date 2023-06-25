@@ -276,7 +276,8 @@ func (this *Service) Update(req *UpdateRequest, res *core.SlotResponse) {
 	for n, v := range vs {
 		values[o.fieldMapByName[n].col] = v
 	}
-	if err := this.getDB(o.database).Table(fmt.Sprintf("`%s` AS `%s`", tableName, o.key)).Where(where, vals...).Updates(values).Error; err != nil {
+	//if err := this.getDB(o.database).Table(fmt.Sprintf("`%s` AS `%s`", tableName, o.key)).Where(where, vals...).Updates(values).Error; err != nil {
+	if err := this.getDB(o.database).Table(fmt.Sprintf("%s AS %s", tableName, o.key)).Where(where, vals...).Updates(values).Error; err != nil {
 		this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
 		return
 	}
@@ -337,7 +338,8 @@ func (this *Service) Delete(req *DeleteRequest, res *core.SlotResponse) {
 		var values []interface{}
 		for _, vals := range valsSlice {
 			for k, v := range vals {
-				where = append(where, fmt.Sprintf("`%s` = ?", o.fieldMap[k].col))
+				//where = append(where, fmt.Sprintf("`%s` = ?", o.fieldMap[k].col))
+				where = append(where, fmt.Sprintf("%s = ?", o.fieldMap[k].col))
 				values = append(values, this.checkIfIntField(v, o.fieldMap[k].kind))
 			}
 		}
@@ -472,7 +474,8 @@ func (this *Service) Query(req *QueryRequest, res *core.SlotResponse) {
 	var data []htypes.Any
 	var scope *gorm.DB
 
-	scope = this.getDB(o.database).Table(fmt.Sprintf("`%s` AS `%s`", tableName, o.key))
+	//scope = this.getDB(o.database).Table(fmt.Sprintf("`%s` AS `%s`", tableName, o.key))
+	scope = this.getDB(o.database).Table(fmt.Sprintf("%s AS %s", tableName, o.key))
 	scope = scope.Select(selectFieldNames)
 
 	if strings.Trim(strings.Trim(where, ")"), "(") != "" {
@@ -516,7 +519,8 @@ func (this *Service) Query(req *QueryRequest, res *core.SlotResponse) {
 	if computeTotal {
 		var total int64
 		var err error
-		scope = this.getDB(o.database).Table(fmt.Sprintf("`%s` AS `%s`", tableName, o.key))
+		//scope = this.getDB(o.database).Table(fmt.Sprintf("`%s` AS `%s`", tableName, o.key))
+		scope = this.getDB(o.database).Table(fmt.Sprintf("%s AS %s", tableName, o.key))
 		scope = scope.Select(fmt.Sprintf("%s"), o.primaryField.col)
 		if where != "" && where != "()" {
 			err = scope.Where(where, vals...).Count(&total).Error
@@ -622,7 +626,8 @@ func (this *Service) View(req *ViewRequest, res *core.SlotResponse) {
 				this.Response(res, nil, herr)
 				return
 			}
-			orderBys = append(orderBys, fmt.Sprintf("`%s`.`%s` %s", order.object, order.column, order.direction))
+			//orderBys = append(orderBys, fmt.Sprintf("`%s`.`%s` %s", order.object, order.column, order.direction))
+			orderBys = append(orderBys, fmt.Sprintf("%s.%s %s", order.object, order.column, order.direction))
 		}
 	}
 
@@ -657,7 +662,8 @@ func (this *Service) View(req *ViewRequest, res *core.SlotResponse) {
 		this.Response(res, nil, herr)
 		return
 	} else {
-		tableName = fmt.Sprintf("`%s` AS `%s`", tab, vw.from.key)
+		//tableName = fmt.Sprintf("`%s` AS `%s`", tab, vw.from.key)
+		tableName = fmt.Sprintf("%s AS %s", tab, vw.from.key)
 		scope = db.Table(tableName)
 	}
 
@@ -667,7 +673,8 @@ func (this *Service) View(req *ViewRequest, res *core.SlotResponse) {
 			this.Response(res, nil, herr)
 			return
 		} else {
-			j := fmt.Sprintf("LEFT JOIN `%s` AS `%s` ON `%s`.`%s` = `%s`.`%s`",
+			//j := fmt.Sprintf("LEFT JOIN `%s` AS `%s` ON `%s`.`%s` = `%s`.`%s`",
+			j := fmt.Sprintf("LEFT JOIN %s AS %s ON %s.%s = %s.%s",
 				tab, join.object.key,
 				join.on.leftObj.key, join.on.leftField.col,
 				join.on.rightObj.key, join.on.rightField.col)

@@ -3,14 +3,13 @@ package hconf
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/drharryhe/has/common/htypes"
+	jsoniter "github.com/json-iterator/go"
+	"github.com/pelletier/go-toml/v2"
 	"io/ioutil"
 	"os"
 	"strings"
 
-	jsoniter "github.com/json-iterator/go"
-	"github.com/pelletier/go-toml/v2"
-
-	"github.com/drharryhe/has/common/htypes"
 	"github.com/drharryhe/has/utils/hio"
 	"github.com/drharryhe/has/utils/hruntime"
 )
@@ -98,8 +97,12 @@ func Save() {
 	handleNumberInMap(tmp)
 
 	//保存到文件
-	bs, _ = toml.Marshal(tmp)
-	err := ioutil.WriteFile(ConfFile, bs, 0x666)
+	bs, err := toml.Marshal(tmp)
+	if err != nil {
+		panic("failed to save configures,failed to write config file")
+	}
+
+	err = ioutil.WriteFile(ConfFile, bs, 0x666)
 	if err != nil {
 		panic("failed to save configures,failed to write config file")
 	}

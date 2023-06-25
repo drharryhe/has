@@ -54,11 +54,13 @@ func (this *baseField) Kind() reflect.Kind {
 }
 
 func (this *baseField) SQL() string {
-	return fmt.Sprintf("`%s`.`%s` AS `%s`", this.owner.object.key, this.owner.fieldCol, this.key)
+	//return fmt.Sprintf("`%s`.`%s` AS `%s`", this.owner.object.key, this.owner.fieldCol, this.key)
+	return fmt.Sprintf("%s.%s AS %s", this.owner.object.key, this.owner.fieldCol, this.key)
 }
 
 func (this *baseField) Column() string {
-	return fmt.Sprintf("`%s`.`%s`", this.owner.object.key, this.owner.fieldCol)
+	//return fmt.Sprintf("`%s`.`%s`", this.owner.object.key, this.owner.fieldCol)
+	return fmt.Sprintf("%s.%s", this.owner.object.key, this.owner.fieldCol)
 }
 
 func (this *baseField) Owner() *fieldOwner {
@@ -74,7 +76,7 @@ func newViewField() *viewField {
 	return f
 }
 
-//视图，用于连表查询。主要在定义视图实例时，全部使用key，而不是对象/字段名或列名
+// 视图，用于连表查询。主要在定义视图实例时，全部使用key，而不是对象/字段名或列名
 type view struct {
 	from       *object                        //From 连接的对象
 	joins      []*join                        //LEFT JOIN 的对象
@@ -110,7 +112,7 @@ func (this *view) AddField(f *viewField) {
 	this.fieldSlice = append(this.fieldSlice, f)
 }
 
-//对象
+// 对象
 type object struct {
 	database           string                              //对象保存到的数据库的key
 	tableName          string                              //表名（分表时作为前缀）
