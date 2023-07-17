@@ -40,7 +40,7 @@ func (this *Service) Login(req *LoginRequest, res *core.SlotResponse) {
 			}
 			// 解锁
 			lockTime, _ := time.Parse("2006-01-02 15:04:05", this.conf.LockTime)
-			if time.Now().Sub(lockTime) * time.Second >= time.Duration(this.conf.UnlockTime) * time.Second {
+			if time.Now().Sub(lockTime)*time.Second >= time.Duration(this.conf.UnlockTime)*time.Second {
 				this.conf.LockTime = ""
 				hconf.Save()
 				goto UNLOCK
@@ -48,7 +48,7 @@ func (this *Service) Login(req *LoginRequest, res *core.SlotResponse) {
 			this.Response(res, nil, herrors.ErrUserUnauthorizedAct.New(fmt.Sprintf(strUserLocked, this.conf.UnlockTime)))
 			return
 		}
-		UNLOCK:
+	UNLOCK:
 		if this.conf.SuperPwd == "" || this.conf.SuperPwd != this.pwdEncodingFunc(pwd) {
 			this.conf.SuperFailed++
 			hconf.Save()
@@ -72,14 +72,14 @@ func (this *Service) Login(req *LoginRequest, res *core.SlotResponse) {
 		}
 
 		if u.Locked {
-			if time.Now().Sub(*u.LockTime) *time.Second >= time.Duration(this.conf.UnlockTime) * time.Second {
+			if time.Now().Sub(*u.LockTime)*time.Second >= time.Duration(this.conf.UnlockTime)*time.Second {
 				u.Locked = false
 				goto USERUNLOCK
 			}
 			this.Response(res, nil, herrors.ErrUserUnauthorizedAct.New(fmt.Sprintf(strUserLocked, this.conf.UnlockTime)))
 			return
 		}
-		USERUNLOCK:
+	USERUNLOCK:
 		if u.Password != this.pwdEncodingFunc(pwd) {
 			this.Response(res, nil, herrors.ErrUserInvalidAct.New(strInvalidUserOrPassword))
 			u.Fails++
@@ -213,10 +213,10 @@ func (this *Service) ChangeSuperPwd(req *ChangeSuperPwdRequest, res *core.SlotRe
 		return
 	}
 
-	if this.conf.SuperFails >= this.conf.LockAfterFails {
+	if this.conf.SuperFailed >= this.conf.SuperFails {
 		this.conf.SuperFails++
-		hconf.Save()
-		this.Response(res, nil, herrors.ErrUserUnauthorizedAct.New(strUserLocked))
+		//hconf.Save()
+		this.Response(res, nil, herrors.ErrUserUnauthorizedAct.New(strInvalidUserOrPassword))
 		return
 	}
 
