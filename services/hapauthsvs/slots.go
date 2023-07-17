@@ -214,7 +214,7 @@ func (this *Service) ChangeSuperPwd(req *ChangeSuperPwdRequest, res *core.SlotRe
 	}
 
 	if this.conf.SuperFailed >= this.conf.SuperFails {
-		this.conf.SuperFails++
+		this.conf.SuperFailed++
 		//hconf.Save()
 		this.Response(res, nil, herrors.ErrUserUnauthorizedAct.New(strInvalidUserOrPassword))
 		return
