@@ -11,7 +11,6 @@ import (
 	"github.com/drharryhe/has/core"
 	"github.com/drharryhe/has/utils/hconverter"
 	"github.com/drharryhe/has/utils/hdatetime"
-	"github.com/drharryhe/has/utils/hencoder"
 )
 
 type LoginRequest struct {
@@ -231,7 +230,7 @@ func (this *Service) ChangeSuperPwd(req *ChangeSuperPwdRequest, res *core.SlotRe
 		return
 	}
 
-	this.conf.SuperPwd = this.pwdEncodingFunc(hencoder.Sha256Hash(pwdNew))
+	this.conf.SuperPwd = this.pwdEncodingFunc(pwdNew)
 	hconf.Save()
 }
 
