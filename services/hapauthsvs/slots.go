@@ -220,7 +220,7 @@ func (this *Service) ChangeSuperPwd(req *ChangeSuperPwdRequest, res *core.SlotRe
 		return
 	}
 
-	if this.conf.SuperPwd != this.pwdEncodingFunc(hencoder.Sha256Hash(pwdOld)) {
+	if this.conf.SuperPwd != this.pwdEncodingFunc(pwdOld) {
 		this.Response(res, nil, herrors.ErrUserInvalidAct.New(strInvalidUserOrPassword))
 		return
 	}
