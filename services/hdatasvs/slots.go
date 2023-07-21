@@ -425,8 +425,8 @@ func (this *Service) Query(req *QueryRequest, res *core.SlotResponse) {
 		//if f.kind == reflect.Slice || f.kind == reflect.Struct {
 		//	continue
 		//} else {
-			dims = append(dims, f.Key())
-			selectFieldNames = append(selectFieldNames, f.SQL())
+		dims = append(dims, f.Key())
+		selectFieldNames = append(selectFieldNames, f.SQL())
 		//}
 	}
 
@@ -601,7 +601,7 @@ func (this *Service) View(req *ViewRequest, res *core.SlotResponse) {
 			continue
 		}
 
-		if f.kind == reflect.Map || f.kind == reflect.Ptr || f.kind == reflect.Slice || f.kind == reflect.Struct {
+		if f.kind == reflect.Map || f.kind == reflect.Ptr || f.kind == reflect.Slice { // 时间类型time.Time 也是reflect.Struct
 			this.Response(res, nil, herrors.ErrSysInternal.New("invalid view [%s] dim [%s]", vw.name, f.name))
 			return
 		}

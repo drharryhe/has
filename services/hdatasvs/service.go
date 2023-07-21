@@ -1961,7 +1961,7 @@ func (this *Service) parseView(o htypes.Any) (*view, *herrors.Error) {
 
 		vf := newViewField()
 		vf.kind = f.Type.Kind()
-		if vf.kind == reflect.Struct || vf.kind == reflect.Ptr || vf.kind == reflect.Map || vf.kind == reflect.Slice {
+		if vf.kind == reflect.Ptr || vf.kind == reflect.Map || vf.kind == reflect.Slice { // 时间类型需要time.Time Struct
 			continue
 		}
 		vf.name = f.Name
