@@ -367,7 +367,7 @@ type DelUserRequest struct {
 }
 
 func (this *Service) DelUser(req *DelUserRequest, res *core.SlotResponse) {
-	if err := this.db.Where("user = ?", *req.Name).Delete(&SvsApAuthUser{}).Error; err != nil {
+	if err := this.db.Unscoped().Where("user = ?", *req.Name).Delete(&SvsApAuthUser{}).Error; err != nil { // 没有硬删除导致无法重复建新账号
 		this.Response(res, nil, herrors.ErrSysInternal.New(err.Error()))
 	} else {
 		this.Response(res, nil, nil)
