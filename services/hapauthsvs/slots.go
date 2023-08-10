@@ -389,7 +389,7 @@ func (this *Service) UpdateUser(req *UpdateUserRequest, res *core.SlotResponse) 
 		return
 	}
 
-	vals := make(htypes.Map)
+	vals := make(map[string]interface{}) // gorm必须用map[string]interface{}，否则会报错
 	if req.Password != nil {
 		vals["password"] = this.pwdEncodingFunc(pwd)
 	}
